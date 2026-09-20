@@ -1,4 +1,5 @@
 """Inner loop: self-edit, temporary LoRA, closed-book answers, graded accuracy, ReST-EM rounds."""
+import random
 from statistics import mean
 from typing import Callable, Dict, List, Optional, Sequence
 
@@ -8,6 +9,7 @@ from ..data_generation.make_squad_data import MAKE_SQUAD_DATA_TEMPLATES_BASE
 from ..utils import build_train_sequences, format_answer_prompts
 from .grading import Grader
 from .model_ops import Policy
+from .splits import passage_key
 
 QuestionSet = List[Dict[str, str]]
 SelfEditSource = Callable[[Dict], List[str]]
@@ -133,6 +135,7 @@ def se_rl_round(policy: Policy, grader: Grader, passages: Sequence[Dict],
         chosen = max(range(len(scores)), key=lambda index: reward_accuracies[index])
         baseline = before.means()
         records.append({
+            "key": passage_key(passage),
             "title": passage["title"],
             "closed_book": baseline,
             "reward_accuracies": reward_accuracies,
@@ -152,8 +155,6 @@ def se_rl_round(policy: Policy, grader: Grader, passages: Sequence[Dict],
 def random_selection_round(policy: Policy, passages: Sequence[Dict], round_index: int,
                            seed: int) -> Dict:
     """Control: same amount of finetuning, self-edit picked without any reward."""
-    import random
-
     picker = random.Random(seed * 1000 + round_index)
     records = []
     pairs = []
@@ -161,7 +162,8 @@ def random_selection_round(policy: Policy, passages: Sequence[Dict], round_index
         sample_seed = seed * 1000 + round_index * 100 + passage_index
         self_edits = sample_self_edits(policy, passage, config.SELF_EDITS, seed=sample_seed)
         chosen = picker.randrange(len(self_edits))
-        records.append({"title": passage["title"], "chosen": chosen})
+        records.append({"key": passage_key(passage), "title": passage["title"],
+                        "chosen": chosen})
         pairs.append((self_edit_prompt(passage), self_edits[chosen]))
     return {"round": round_index, "passages": records, "pairs": pairs}
 
@@ -183,6 +185,7 @@ def evaluate_passages(policy: Policy, grader: Grader, passages: Sequence[Dict],
             pending = [closed_book_scores(policy, grader, question_sets, seed=passage_index)]
         accuracies = [entry.means()["gold"] for entry in pending]
         records.append({
+            "key": passage_key(passage),
             "title": passage["title"],
             "question_count": len(question_sets["gold"]),
             "self_edit_accuracies": accuracies,

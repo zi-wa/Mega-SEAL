@@ -104,6 +104,7 @@ def score_passage(policy: Policy, grader: Grader, passage: Dict, iteration: int,
     best = max(rewarded, key=lambda record: record["margin"]) if rewarded else None
     return {
         "iteration": iteration,
+        "key": splits.passage_key(passage),
         "title": passage["title"],
         "qa_prompt": qa_gen.qa_gen_prompt(passage),
         "closed_book": {"qa0": baseline["qa0"]},
@@ -124,15 +125,16 @@ def run_iteration(policy: Policy, grader: Grader, iteration: int, outer_dir: Pat
     done = {}
     if records_path.exists():
         with records_path.open(encoding="utf-8") as records_file:
-            done = {json.loads(line)["title"]: json.loads(line) for line in records_file}
+            done = {json.loads(line)["key"]: json.loads(line) for line in records_file}
 
     passages = splits.outer_passages(iteration)
     records = []
     null_pairs: List[Dict[str, str]] = []
     for passage_index, passage in enumerate(passages):
-        if passage["title"] in done:
-            records.append(done[passage["title"]])
-            null_pairs = done[passage["title"]].get("first_candidate_pairs", [])
+        finished = done.get(splits.passage_key(passage))
+        if finished:
+            records.append(finished)
+            null_pairs = finished.get("first_candidate_pairs", [])
             continue
         record = score_passage(policy, grader, passage, iteration, passage_index, null_pairs)
         null_pairs = record["first_candidate_pairs"]
