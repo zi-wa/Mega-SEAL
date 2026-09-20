@@ -46,3 +46,21 @@ To run the continual self-edits experiment (Section 5):
 ```bash
 sbatch general-knowledge/scripts/continual_self_edits.sh
 ```
+
+## Self-generated evaluation questions (qagen)
+
+Extension of the SEAL pipeline for the study in `Docs`: the model writes its own evaluation
+questions for an unlabeled passage, those questions drive the self-edit ReST-EM loop, and an outer
+loop rewards the question sets whose pick also helps on the gold questions.
+
+Runs in one process with transformers and PEFT (no vLLM, no ZMQ), on a single GPU under Windows.
+
+```bat
+setup_win.bat   REM creates seal_env, installs torch (cu130) and requirements-win.txt, copies config.py
+run_all.bat     REM pilot -> judge check -> outer loop -> SE-RL and evaluation -> summary.md
+```
+
+Settings live in `config.py` (gitignored, copied from `config.example.py`); the OpenAI key goes
+there. Results are written to `results/qagen/<RUN_NAME>/`, adapters to `models/qagen/<RUN_NAME>/`.
+Every stage skips finished work, so `run_all.bat` resumes after a stop. Hypotheses and pass
+criteria are fixed in advance in `src/qagen/PREREGISTRATION.md`.

@@ -1,0 +1,8 @@
+# torch comes from download.pytorch.org (cu130) in setup_win.bat, not from PyPI
+transformers==5.17.0
+peft==0.21.0
+accelerate==1.15.0
+openai==3.16.2
+scipy==1.15.3
+numpy==2.2.6
+requests==2.34.2

@@ -1,4 +1,10 @@
+CLAUDE.md
+Docs/
 .env
+seal_env/
+.vscode/
 __pycache__/
 logs/
 models/
+config.py
+general-knowledge/tests/
