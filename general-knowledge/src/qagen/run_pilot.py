@@ -4,7 +4,6 @@ Run as `python -m general-knowledge.src.qagen.run_pilot`. Uses the dev passages 
 validation passages stay untouched until the final evaluation.
 """
 import json
-from statistics import mean
 from typing import Dict, List
 
 import config

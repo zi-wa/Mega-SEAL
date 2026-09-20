@@ -5,7 +5,6 @@ finished condition is skipped, so the primary comparison exists even if the mach
 """
 import json
 import zlib
-from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from openai import OpenAI
