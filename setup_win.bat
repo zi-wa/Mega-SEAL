@@ -54,10 +54,12 @@ echo Setup finished.
 echo Set the OpenAI key as an environment variable, not in any file:
 echo     setx OPENAI_API_KEY "sk-..."
 echo Then open a new window and run run_all.bat
+pause
 endlocal
 exit /b 0
 
 :fail
 echo Setup stopped. Fix the problem above and run setup_win.bat again.
+pause
 endlocal
 exit /b 1

@@ -62,5 +62,5 @@ run_all.bat     REM pilot -> judge check -> outer loop -> SE-RL and evaluation -
 
 Settings live in `config.py` (gitignored, copied from `config.example.py`). The OpenAI key is read
 from the environment only: `setx OPENAI_API_KEY "sk-..."`, then open a new window. Results are written to `results/qagen/<RUN_NAME>/`, adapters to `models/qagen/<RUN_NAME>/`.
-Every stage skips finished work, so `run_all.bat` resumes after a stop. Hypotheses and pass
+Every stage skips finished work, so `run_all.bat` resumes after a stop. The window stays open at the end, and all stage output, including any traceback, is appended to `logs/run_all.log`. Hypotheses and pass
 criteria are fixed in advance in `src/qagen/PREREGISTRATION.md`.

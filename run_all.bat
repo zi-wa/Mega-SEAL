@@ -13,6 +13,11 @@ set CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 set PYTHON_BIN=seal_env\Scripts\python.exe
 
+REM Every stage also appends its output and any traceback here, so errors stay readable.
+if not exist logs mkdir logs
+set QAGEN_LOG=%~dp0logs\run_all.log
+echo Log file: logs\run_all.log
+
 if not exist config.py (
     echo config.py not found. Run setup_win.bat first.
     goto :fail
@@ -75,10 +80,14 @@ if errorlevel 1 (
 
 echo.
 echo All five stages finished. The summary is in summary.md
+echo Log file: logs\run_all.log
+pause
 endlocal
 exit /b 0
 
 :fail
 echo Run stopped. Fix the problem above and run run_all.bat again to resume.
+echo The full output, including the error, is in logs\run_all.log
+pause
 endlocal
 exit /b 1
