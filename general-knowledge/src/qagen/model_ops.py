@@ -13,6 +13,10 @@ import config
 
 MERGED_WEIGHT_SUFFIXES = tuple(f".{module}.weight" for module in config.SFT_TARGET_MODULES)
 
+# multimodal checkpoints nest the text weights one level deeper than the text-only class expects;
+# the pattern matches nothing in a text-only checkpoint
+TEXT_KEY_MAPPING = {r"^model\.language_model\.": "model."}
+
 Example = Tuple[Optional[str], str]  # (prompt or None, target); None keeps loss on the whole sequence
 
 
@@ -34,6 +38,7 @@ class Policy:
             model_name,
             dtype=torch.bfloat16,
             output_loading_info=True,
+            key_mapping=TEXT_KEY_MAPPING,
         )
         # a text-only class over a multimodal checkpoint leaves vision/audio keys unused, which is
         # fine, but a missing or reshaped text key would mean silently random weights

@@ -403,6 +403,13 @@ def render_hypotheses(verdicts):
     return lines
 
 
+def correlation_line(label, bootstrap):
+    if bootstrap is None:
+        return f"- {label}: not computable, every passage had a constant accuracy vector"
+    return (f"- {label}: {bootstrap['mean']:.3f} [{bootstrap['ci_low']:.3f}, "
+            f"{bootstrap['ci_high']:.3f}] over {bootstrap['n']} passages")
+
+
 def render_markdown(summary):
     run = summary["run"]
     lines = [
@@ -446,23 +453,23 @@ def render_markdown(summary):
 
     lines += ["", "## RQ1 proxy validity", ""]
     validity = summary["proxy_validity"]
-    generated = validity["generated_vs_gold"]
-    null_reference = validity["null_vs_gold"]
-    if generated is None:
+    if not validity["generated_attempted"]:
         lines.append("outer records not present")
     else:
+        kappa = validity["best_self_edit_kappa"]
         lines += [
-            f"- mean within-passage Spearman, generated vs gold questions: {generated['mean']:.3f} "
-            f"[{generated['ci_low']:.3f}, {generated['ci_high']:.3f}] over {generated['n']} passages",
+            correlation_line("mean within-passage Spearman, generated vs gold questions",
+                             validity["generated_vs_gold"]),
             f"- generated-question correlation dropped {validity['generated_dropped']} of "
             f"{validity['generated_attempted']} passages (constant accuracy vector, undefined Spearman)",
-            f"- null reference, other passage's questions vs gold: {null_reference['mean']:.3f} "
-            f"[{null_reference['ci_low']:.3f}, {null_reference['ci_high']:.3f}] over {null_reference['n']} passages",
+            correlation_line("null reference, other passage's questions vs gold",
+                             validity["null_vs_gold"]),
             f"- null reference correlation dropped {validity['null_dropped']} of "
             f"{validity['null_attempted']} passages (constant accuracy vector, undefined Spearman)",
             "- both means are conditional on non-constant passages; dropped passages are excluded, not zero",
-            f"- Cohen's kappa, best self-edit by generated vs gold questions: "
-            f"{validity['best_self_edit_kappa']:.3f} over {validity['kappa_items']} self-edit labels",
+            "- Cohen's kappa, best self-edit by generated vs gold questions: "
+            + ("not computable" if kappa is None else
+               f"{kappa:.3f} over {validity['kappa_items']} self-edit labels"),
         ]
 
     lines += ["", "## RQ1 primary criteria (PREREGISTRATION.md)", ""]
