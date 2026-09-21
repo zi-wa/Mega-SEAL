@@ -63,6 +63,8 @@ def paired_bootstrap(paired_differences, iterations=10000, seed=0):
 def cluster_bootstrap(paired_differences, cluster_titles, iterations=10000, seed=0):
     # passages of one SQuAD article are not independent, so articles are resampled with all their passages
     differences = np.asarray(paired_differences, dtype=float)
+    if differences.size == 0:
+        return None  # no passages shared between the two conditions, nothing to cluster
     title_column = np.asarray(cluster_titles)
     titles = list(dict.fromkeys(cluster_titles))
     rows_by_title = [np.flatnonzero(title_column == title) for title in titles]
@@ -105,21 +107,21 @@ def load_conditions(run_dir):
 
 
 def accuracy_by_passage(condition):
-    # SQuAD article titles repeat across the validation passages, so the occurrence index keeps them apart
-    accuracies = {}
-    occurrences = {}
-    for passage in condition["passages"]:
-        title = passage["title"]
-        occurrence = occurrences.get(title, 0)
-        occurrences[title] = occurrence + 1
-        accuracies[(title, occurrence)] = passage["accuracy"]
-    return accuracies
+    # key is title + context hash (unique per passage), so pairing does not depend on file order
+    return {passage["key"]: passage["accuracy"] for passage in condition["passages"]}
+
+
+def title_by_key(condition):
+    return {
+        passage["key"]: passage.get("title", passage["key"].rsplit("#", 1)[0])
+        for passage in condition["passages"]
+    }
 
 
 def paired_differences(treatment_accuracies, baseline_accuracies):
     shared = [key for key in treatment_accuracies if key in baseline_accuracies]
     differences = [treatment_accuracies[key] - baseline_accuracies[key] for key in shared]
-    return differences, [title for title, _ in shared]
+    return differences, shared
 
 
 def seed_mean_accuracies(accuracy_tables):
@@ -133,7 +135,7 @@ def seed_mean_accuracies(accuracy_tables):
     }
 
 
-def condition_rows(conditions, accuracy_tables):
+def condition_rows(conditions, accuracy_tables, title_lookup):
     baseline = accuracy_tables.get("base_se")
     seed_files = [conditions[name] for name in SEED_CONDITIONS if name in conditions]
     rows = []
@@ -145,21 +147,25 @@ def condition_rows(conditions, accuracy_tables):
             "condition": name,
             "mean_accuracy": float(np.mean([source["mean_accuracy"] for source in sources])),
             "passages": len(conditions[name]["passages"]) if name in conditions else len(accuracy_tables[name]),
-            "ttt_count": float(np.mean([source["ttt_count"] for source in sources])),
-            "gpu_hours": float(np.mean([source["gpu_seconds"] for source in sources])) / 3600.0,
+            "ttt_count": float(np.mean([source.get("ttt_count", 0) for source in sources])),
+            "gpu_hours": float(np.mean([source.get("gpu_seconds", 0) for source in sources])) / 3600.0,
             "difference": None,
             "cluster_difference": None,
+            "cluster_difference_reason": None,
         }
         if baseline is not None and name != "base_se":
-            differences, titles = paired_differences(accuracy_tables[name], baseline)
+            differences, keys = paired_differences(accuracy_tables[name], baseline)
             row["difference"] = paired_bootstrap(differences)
             if name == SEED_MEAN:
+                titles = [title_lookup[key] for key in keys]
                 row["cluster_difference"] = cluster_bootstrap(differences, titles)
+                if row["cluster_difference"] is None:
+                    row["cluster_difference_reason"] = "no passages shared with base_se"
         rows.append(row)
     return rows
 
 
-def run_hypothesis_sequence(accuracy_tables):
+def run_hypothesis_sequence(accuracy_tables, title_lookup):
     verdicts = []
     stopped = False
     for identifier, statement, treatment, baseline, threshold in HYPOTHESES:
@@ -181,10 +187,11 @@ def run_hypothesis_sequence(accuracy_tables):
             verdicts.append(verdict)
             stopped = True
             continue
-        differences, titles = paired_differences(accuracy_tables[treatment], accuracy_tables[baseline])
+        differences, keys = paired_differences(accuracy_tables[treatment], accuracy_tables[baseline])
         verdict["bootstrap"] = paired_bootstrap(differences)
         passed = verdict["bootstrap"]["ci_low"] > threshold
         if identifier == "H1":
+            titles = [title_lookup[key] for key in keys]
             verdict["cluster_bootstrap"] = cluster_bootstrap(differences, titles)
             seed_differences = {
                 name: float(np.mean(paired_differences(accuracy_tables[name], accuracy_tables[baseline])[0]))
@@ -249,16 +256,19 @@ def generation_quality(records):
 
 def proxy_validity(records):
     generated_correlations = []
+    generated_attempted = 0
+    generated_dropped = 0
     null_correlations = []
+    null_attempted = 0
+    null_dropped = 0
     selected_labels = []
     gold_labels = []
     for record in records:
         gold_accuracies = record["qa0_accuracies"]
         best_by_gold = int(np.argmax(gold_accuracies))
+        parsed_candidates = [candidate for candidate in record["candidates"] if candidate["parse_ok"]]
         passage_correlations = []
-        for candidate in record["candidates"]:
-            if not candidate["parse_ok"]:
-                continue
+        for candidate in parsed_candidates:
             correlation = float(spearmanr(candidate["gen_accuracies"], gold_accuracies).statistic)
             # a self-edit set scored identically by every question gives no ranks to correlate
             if not np.isnan(correlation):
@@ -267,19 +277,76 @@ def proxy_validity(records):
                 1 if index == candidate["selected"] else 0 for index in range(len(gold_accuracies))
             )
             gold_labels.extend(1 if index == best_by_gold else 0 for index in range(len(gold_accuracies)))
-        if passage_correlations:
-            generated_correlations.append(float(np.mean(passage_correlations)))
+        if parsed_candidates:
+            generated_attempted += 1
+            if passage_correlations:
+                generated_correlations.append(float(np.mean(passage_correlations)))
+            else:
+                generated_dropped += 1
         # the first passage of an iteration has no earlier passage to borrow a null question set from
         if len(record["null_accuracies"]) == len(gold_accuracies):
+            null_attempted += 1
             null_correlation = float(spearmanr(record["null_accuracies"], gold_accuracies).statistic)
             if not np.isnan(null_correlation):
                 null_correlations.append(null_correlation)
+            else:
+                null_dropped += 1
     return {
         "generated_vs_gold": paired_bootstrap(generated_correlations) if generated_correlations else None,
+        "generated_attempted": generated_attempted,
+        "generated_dropped": generated_dropped,
         "null_vs_gold": paired_bootstrap(null_correlations) if null_correlations else None,
+        "null_attempted": null_attempted,
+        "null_dropped": null_dropped,
         "best_self_edit_kappa": cohens_kappa(selected_labels, gold_labels) if selected_labels else None,
         "kappa_items": len(selected_labels),
     }
+
+
+def qa_gen_correctness(records):
+    # pooled mean over every parsed candidate across all outer iterations, not the mean of per-iteration means
+    parsed = [candidate for record in records for candidate in record["candidates"] if candidate["parse_ok"]]
+    return candidate_mean(parsed, "correctness")
+
+
+def rq1_verdicts(validity, records):
+    generated = validity["generated_vs_gold"]
+    if generated is None:
+        spearman_verdict = {
+            "id": "RQ1-spearman",
+            "statement": "mean within-passage Spearman (generated vs gold) bootstrap 95% CI lower bound > 0",
+            "verdict": "not tested",
+            "reason": "outer records not present",
+            "ci_low": None,
+        }
+    else:
+        spearman_verdict = {
+            "id": "RQ1-spearman",
+            "statement": "mean within-passage Spearman (generated vs gold) bootstrap 95% CI lower bound > 0",
+            "verdict": "pass" if generated["ci_low"] > 0 else "fail",
+            "reason": None,
+            "ci_low": generated["ci_low"],
+        }
+    if not records:
+        correctness_verdict = {
+            "id": "RQ1-correctness",
+            "statement": "QA_gen answer correctness >= 80%, pooled mean of correctness over parsed "
+                          "candidates across all outer iterations",
+            "verdict": "not tested",
+            "reason": "outer records not present",
+            "mean_correctness": None,
+        }
+    else:
+        correctness = qa_gen_correctness(records)
+        correctness_verdict = {
+            "id": "RQ1-correctness",
+            "statement": "QA_gen answer correctness >= 80%, pooled mean of correctness over parsed "
+                          "candidates across all outer iterations",
+            "verdict": "pass" if not np.isnan(correctness) and correctness >= 0.8 else "fail",
+            "reason": None,
+            "mean_correctness": None if np.isnan(correctness) else correctness,
+        }
+    return [spearman_verdict, correctness_verdict]
 
 
 def percent(value):
@@ -351,6 +418,11 @@ def render_markdown(summary):
         "",
     ]
     lines += render_conditions(summary["conditions"])
+    lines += [
+        "",
+        "Title-cluster bootstrap resamples about 47 SQuAD article clusters; "
+        "small-cluster bootstraps run somewhat liberal.",
+    ]
     lines += ["", "## Hypotheses, fixed sequence", ""]
     lines += render_hypotheses(summary["hypotheses"])
 
@@ -382,11 +454,25 @@ def render_markdown(summary):
         lines += [
             f"- mean within-passage Spearman, generated vs gold questions: {generated['mean']:.3f} "
             f"[{generated['ci_low']:.3f}, {generated['ci_high']:.3f}] over {generated['n']} passages",
+            f"- generated-question correlation dropped {validity['generated_dropped']} of "
+            f"{validity['generated_attempted']} passages (constant accuracy vector, undefined Spearman)",
             f"- null reference, other passage's questions vs gold: {null_reference['mean']:.3f} "
             f"[{null_reference['ci_low']:.3f}, {null_reference['ci_high']:.3f}] over {null_reference['n']} passages",
+            f"- null reference correlation dropped {validity['null_dropped']} of "
+            f"{validity['null_attempted']} passages (constant accuracy vector, undefined Spearman)",
+            "- both means are conditional on non-constant passages; dropped passages are excluded, not zero",
             f"- Cohen's kappa, best self-edit by generated vs gold questions: "
             f"{validity['best_self_edit_kappa']:.3f} over {validity['kappa_items']} self-edit labels",
         ]
+
+    lines += ["", "## RQ1 primary criteria (PREREGISTRATION.md)", ""]
+    for verdict in summary["rq1_verdicts"]:
+        detail = f"({verdict['reason']})" if verdict["reason"] else ""
+        if verdict["id"] == "RQ1-spearman" and verdict["ci_low"] is not None:
+            detail = f"CI low {verdict['ci_low']:.3f}"
+        if verdict["id"] == "RQ1-correctness" and verdict["mean_correctness"] is not None:
+            detail = f"correctness {percent(verdict['mean_correctness'])}%"
+        lines.append(f"- {verdict['id']}: {verdict['statement']} -> {verdict['verdict']} {detail}".rstrip())
 
     lines += ["", "## Outer loop training", ""]
     training_rows = summary["outer_training"]
@@ -414,10 +500,13 @@ def render_markdown(summary):
             f"output tokens: {grader['output_tokens']}, cost: {grader['cost_usd']:.2f} USD",
             f"- grader models: {', '.join(grader['models'])}",
         ]
-    lines += [
-        f"- TTT runs over all conditions: {cost['ttt_count']}",
-        f"- GPU hours over all conditions: {cost['gpu_hours']:.2f}",
-    ]
+    for stage_name, stage in (
+        ("evaluation", cost["evaluation"]),
+        ("SE-RL training", cost["se_rl"]),
+        ("outer loop", cost["outer"]),
+        ("total", cost["total"]),
+    ):
+        lines.append(f"- {stage_name} TTT: {stage['ttt_count']}, GPU hours: {stage['gpu_hours']:.2f}")
     if cost["pilot_ttt_seconds"] is None:
         lines.append("- pilot not present")
     else:
@@ -434,6 +523,18 @@ def render_markdown(summary):
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def load_serl_rounds(run_dir):
+    return [json.loads(path.read_text(encoding="utf-8")) for path in (run_dir / "serl").glob("*_round*.json")]
+
+
+def stage_ttt_totals(stage_records):
+    # older runs wrote these files before ttt_count/gpu_seconds were tracked
+    return {
+        "ttt_count": sum(record.get("ttt_count", 0) for record in stage_records),
+        "gpu_hours": sum(record.get("gpu_seconds", 0) for record in stage_records) / 3600.0,
+    }
 
 
 def merged_grader_usage(run_dir):
@@ -460,8 +561,20 @@ def main():
     seed_table = seed_mean_accuracies(accuracy_tables)
     if seed_table:
         accuracy_tables[SEED_MEAN] = seed_table
+    title_lookup = {}
+    for condition in conditions.values():
+        title_lookup.update(title_by_key(condition))
     outer_records = load_outer_records(run_dir)
+    outer_summaries = load_outer_summaries(run_dir)
     pilot = read_optional(run_dir / "dev" / "pilot.json")
+    proxy_validity_result = proxy_validity(outer_records)
+    evaluation_cost = stage_ttt_totals(conditions.values())
+    se_rl_cost = stage_ttt_totals(load_serl_rounds(run_dir))
+    outer_cost = stage_ttt_totals(outer_summaries)
+    total_cost = {
+        "ttt_count": evaluation_cost["ttt_count"] + se_rl_cost["ttt_count"] + outer_cost["ttt_count"],
+        "gpu_hours": evaluation_cost["gpu_hours"] + se_rl_cost["gpu_hours"] + outer_cost["gpu_hours"],
+    }
     summary = {
         "run": {
             "name": config.RUN_NAME,
@@ -470,15 +583,18 @@ def main():
             "date": date.today().isoformat(),
             "note": HEADER_NOTE,
         },
-        "conditions": condition_rows(conditions, accuracy_tables),
-        "hypotheses": run_hypothesis_sequence(accuracy_tables),
+        "conditions": condition_rows(conditions, accuracy_tables, title_lookup),
+        "hypotheses": run_hypothesis_sequence(accuracy_tables, title_lookup),
         "generation_quality": generation_quality(outer_records),
-        "proxy_validity": proxy_validity(outer_records),
-        "outer_training": load_outer_summaries(run_dir),
+        "proxy_validity": proxy_validity_result,
+        "rq1_verdicts": rq1_verdicts(proxy_validity_result, outer_records),
+        "outer_training": outer_summaries,
         "cost": {
             "grader": merged_grader_usage(run_dir),
-            "ttt_count": sum(condition["ttt_count"] for condition in conditions.values()),
-            "gpu_hours": sum(condition["gpu_seconds"] for condition in conditions.values()) / 3600.0,
+            "evaluation": evaluation_cost,
+            "se_rl": se_rl_cost,
+            "outer": outer_cost,
+            "total": total_cost,
             "pilot_ttt_seconds": None if pilot is None else pilot["ttt_seconds"],
         },
         "judge_validation": read_optional(run_dir / "judge" / "validation.json"),

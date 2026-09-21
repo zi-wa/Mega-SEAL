@@ -1,5 +1,6 @@
 """Inner loop: self-edit, temporary LoRA, closed-book answers, graded accuracy, ReST-EM rounds."""
 import random
+from pathlib import Path
 from statistics import mean
 from typing import Callable, Dict, List, Optional, Sequence
 
@@ -9,6 +10,7 @@ from ..data_generation.make_squad_data import MAKE_SQUAD_DATA_TEMPLATES_BASE
 from ..utils import build_train_sequences, format_answer_prompts
 from .grading import Grader
 from .model_ops import Policy
+from .paths import append_jsonl, read_jsonl
 from .splits import passage_key
 
 QuestionSet = List[Dict[str, str]]
@@ -112,17 +114,22 @@ def adapted_scores(policy: Policy, grader: Grader, passage: Dict, self_edit: str
 
 def se_rl_round(policy: Policy, grader: Grader, passages: Sequence[Dict],
                 reward_questions: Callable[[Dict], QuestionSet], round_index: int, seed: int,
+                progress_path: Path,
                 extra_questions: Optional[Callable[[Dict], QuestionSet]] = None) -> Dict:
-    """One ReST-EM round: K self-edits per passage, keep the best one by the reward questions."""
+    """One ReST-EM round: K self-edits per passage, keep the best one by the reward questions.
+
+    Every finished passage is appended to progress_path, so a restart continues mid-round.
+    """
     seeds = list(range(config.TTT_SEEDS))
-    records = []
-    pairs = []
+    done = {record["key"]: record for record in read_jsonl(progress_path)}
     for passage_index, passage in enumerate(passages):
+        key = passage_key(passage)
         question_sets = {"reward": reward_questions(passage)}
+        if key in done or not question_sets["reward"]:
+            continue  # finished before a restart, or nothing to reward with
         if extra_questions:
             question_sets["gold"] = extra_questions(passage)
-        if not question_sets["reward"]:
-            continue  # nothing to reward with; the passage contributes no training pair
+        ttt_before, seconds_before = policy.ttt_count, policy.ttt_seconds
         sample_seed = seed * 1000 + round_index * 100 + passage_index
         self_edits = sample_self_edits(policy, passage, config.SELF_EDITS, seed=sample_seed)
         before = closed_book_scores(policy, grader, question_sets, seed=sample_seed)
@@ -132,24 +139,38 @@ def se_rl_round(policy: Policy, grader: Grader, passages: Sequence[Dict],
         ]
         scores = [entry.means() for entry in pending]
         reward_accuracies = [entry["reward"] for entry in scores]
+        # first index on ties, like the stable sort in SEAL's build_SFT_dataset
         chosen = max(range(len(scores)), key=lambda index: reward_accuracies[index])
         baseline = before.means()
-        records.append({
-            "key": passage_key(passage),
+        record = {
+            "key": key,
             "title": passage["title"],
             "closed_book": baseline,
             "reward_accuracies": reward_accuracies,
             "gold_accuracies": [entry.get("gold") for entry in scores],
             "reward_positive": [accuracy > baseline["reward"] for accuracy in reward_accuracies],
             "chosen": chosen,
+            "chosen_self_edit": self_edits[chosen],
             "truncated": [policy.token_count(edit) >= config.SELF_EDIT_MAX_TOKENS
                           for edit in self_edits],
-        })
-        pairs.append((self_edit_prompt(passage), self_edits[chosen]))
+            "ttt_count": policy.ttt_count - ttt_before,
+            "gpu_seconds": policy.ttt_seconds - seconds_before,
+        }
+        append_jsonl(progress_path, record)
+        done[key] = record
         print(f"[se-rl r{round_index}] {passage_index + 1}/{len(passages)} "
               f"{passage['title'][:40]} best {max(reward_accuracies):.2f} "
               f"closed-book {baseline['reward']:.2f}", flush=True)
-    return {"round": round_index, "passages": records, "pairs": pairs}
+    kept = [passage for passage in passages if passage_key(passage) in done]
+    records = [done[passage_key(passage)] for passage in kept]
+    return {
+        "round": round_index,
+        "passages": records,
+        "pairs": [(self_edit_prompt(passage), done[passage_key(passage)]["chosen_self_edit"])
+                  for passage in kept],
+        "ttt_count": sum(record["ttt_count"] for record in records),
+        "gpu_seconds": sum(record["gpu_seconds"] for record in records),
+    }
 
 
 def random_selection_round(policy: Policy, passages: Sequence[Dict], round_index: int,
@@ -165,15 +186,22 @@ def random_selection_round(policy: Policy, passages: Sequence[Dict], round_index
         records.append({"key": passage_key(passage), "title": passage["title"],
                         "chosen": chosen})
         pairs.append((self_edit_prompt(passage), self_edits[chosen]))
-    return {"round": round_index, "passages": records, "pairs": pairs}
+    return {"round": round_index, "passages": records, "pairs": pairs,
+            "ttt_count": 0, "gpu_seconds": 0.0}
 
 
 def evaluate_passages(policy: Policy, grader: Grader, passages: Sequence[Dict],
-                      self_edit_source: SelfEditSource, label: str) -> Dict:
-    """Held-out measurement: fresh self-edits, one TTT each, accuracy on the gold questions."""
-    records = []
-    ttt_before, seconds_before = policy.ttt_count, policy.ttt_seconds
+                      self_edit_source: SelfEditSource, label: str, progress_path: Path) -> Dict:
+    """Held-out measurement: fresh self-edits, one TTT each, accuracy on the gold questions.
+
+    Every finished passage is appended to progress_path, so a restart continues mid-condition.
+    """
+    done = {record["key"]: record for record in read_jsonl(progress_path)}
     for passage_index, passage in enumerate(passages):
+        key = passage_key(passage)
+        if key in done:
+            continue
+        ttt_before, seconds_before = policy.ttt_count, policy.ttt_seconds
         question_sets = {"gold": gold_questions(passage)}
         self_edits = self_edit_source(passage)
         if self_edits:
@@ -184,23 +212,28 @@ def evaluate_passages(policy: Policy, grader: Grader, passages: Sequence[Dict],
         else:
             pending = [closed_book_scores(policy, grader, question_sets, seed=passage_index)]
         accuracies = [entry.means()["gold"] for entry in pending]
-        records.append({
-            "key": passage_key(passage),
+        record = {
+            "key": key,
             "title": passage["title"],
             "question_count": len(question_sets["gold"]),
             "self_edit_accuracies": accuracies,
             "accuracy": mean(accuracies),
             "truncated": [policy.token_count(edit) >= config.SELF_EDIT_MAX_TOKENS
                           for edit in self_edits],
-        })
-        running = mean(record["accuracy"] for record in records)
+            "ttt_count": policy.ttt_count - ttt_before,
+            "gpu_seconds": policy.ttt_seconds - seconds_before,
+        }
+        append_jsonl(progress_path, record)
+        done[key] = record
+        running = mean(entry["accuracy"] for entry in done.values())
         print(f"[eval {label}] {passage_index + 1}/{len(passages)} "
-              f"{passage['title'][:40]} {records[-1]['accuracy']:.2f} running {running:.3f}",
+              f"{passage['title'][:40]} {record['accuracy']:.2f} running {running:.3f}",
               flush=True)
+    records = [done[passage_key(passage)] for passage in passages]
     return {
         "condition": label,
         "mean_accuracy": mean(record["accuracy"] for record in records),
         "passages": records,
-        "ttt_count": policy.ttt_count - ttt_before,
-        "gpu_seconds": policy.ttt_seconds - seconds_before,
+        "ttt_count": sum(record["ttt_count"] for record in records),
+        "gpu_seconds": sum(record["gpu_seconds"] for record in records),
     }

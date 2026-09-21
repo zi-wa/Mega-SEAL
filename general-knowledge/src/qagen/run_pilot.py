@@ -84,13 +84,15 @@ def main() -> None:
     for label, source in [("closed_book", lambda passage: []),
                           ("passage_only", lambda passage: [""]),
                           ("base_se", one_self_edit)]:
-        measured = evaluate_passages(policy, grader, passages, source, f"dev_{label}")
+        measured = evaluate_passages(policy, grader, passages, source, f"dev_{label}",
+                                     dev_dir / f"{label}.progress.jsonl")
         conditions[label] = measured["mean_accuracy"]
         if label == "base_se":
             ttt_seconds = measured["gpu_seconds"] / max(measured["ttt_count"], 1)
 
     config.SEAL_PAD_QUIRK = True  # ablation: SEAL pads to 2048 with eos and trains on the padding
-    padded = evaluate_passages(policy, grader, passages, one_self_edit, "dev_base_se_seal_padding")
+    padded = evaluate_passages(policy, grader, passages, one_self_edit, "dev_base_se_seal_padding",
+                               dev_dir / "base_se_seal_padding.progress.jsonl")
     config.SEAL_PAD_QUIRK = False
     conditions["base_se_seal_padding"] = padded["mean_accuracy"]
 
@@ -109,6 +111,8 @@ def main() -> None:
         }, indent=2),
         encoding="utf-8",
     )
+    for progress_path in dev_dir.glob("*.progress.jsonl"):
+        progress_path.unlink()  # pilot.json now marks the pilot finished
     grader.close()
 
     print(f"[pilot] one TTT takes {ttt_seconds:.1f}s", flush=True)

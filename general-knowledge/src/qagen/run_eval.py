@@ -99,20 +99,33 @@ def train_se_rl(policy: Policy, grader: Grader, condition: str,
             if adapter_dir.exists():  # a round with no rewarded pair left the weights alone
                 policy.apply_adapters([str(adapter_dir)])
             continue
+        progress_path = serl_dir / f"{condition}_round{round_index}.progress.jsonl"
         if reward_questions is None:
-            result = random_selection_round(policy, passages, round_index, seed)
+            result = random_selection_round(
+                policy, matched_passages(passages, round_index), round_index, seed
+            )
         else:
             result = se_rl_round(policy, grader, passages, reward_questions, round_index, seed,
+                                 progress_path,
                                  extra_questions=gold_questions if "qagen" in condition else None)
         if result["pairs"]:
             policy.finetune_and_merge(result["pairs"], seed=seed, adapter_dir=str(adapter_dir))
         round_path.write_text(
-            json.dumps({"round": round_index, "passages": result["passages"]},
+            json.dumps({"round": round_index, "passages": result["passages"],
+                        "ttt_count": result["ttt_count"], "gpu_seconds": result["gpu_seconds"]},
                        ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        progress_path.unlink(missing_ok=True)
         print(f"[se-rl {condition}] round {round_index} trained on {len(result['pairs'])} pairs",
               flush=True)
+
+
+def matched_passages(passages: List[Dict], round_index: int) -> List[Dict]:
+    """The random-selection control trains on exactly the passages qagen_n0 kept that round."""
+    kept_path = paths.run_dir() / "serl" / f"qagen_n0_round{round_index}.json"
+    kept = {record["key"] for record in json.loads(kept_path.read_text(encoding="utf-8"))["passages"]}
+    return [passage for passage in passages if splits.passage_key(passage) in kept]
 
 
 def gpt_self_edits(passages: List[Dict]) -> Dict[str, List[str]]:
@@ -143,7 +156,8 @@ def prepare(condition: str, policy: Policy, base_weights, grader: Grader) -> Cal
     if condition in ("closed_book", "closed_book_N"):
         return lambda passage: []
     if condition in ("passage_only", "passage_only_N"):
-        return lambda passage: [""]  # train on the passage alone, SEAL's "train on passage only"
+        # train on the passage alone, SEAL's "train on passage only", as many TTTs as self-edits
+        return lambda passage: [""] * config.VAL_SELF_EDITS
     if condition == "gpt_se":
         edits_by_passage = gpt_self_edits(splits.val_passages())
         return lambda passage: edits_by_passage[splits.passage_key(passage)]
@@ -181,8 +195,11 @@ def main() -> None:
             print(f"[eval] {condition} already done", flush=True)
             continue
         self_edit_source = prepare(condition, policy, base_weights, grader)
-        result = evaluate_passages(policy, grader, val_passages, self_edit_source, condition)
+        progress_path = val_dir / f"{condition}.progress.jsonl"
+        result = evaluate_passages(policy, grader, val_passages, self_edit_source, condition,
+                                   progress_path)
         result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        progress_path.unlink(missing_ok=True)
         (paths.run_dir() / "grader_usage.json").write_text(
             json.dumps(grader.usage(), indent=2), encoding="utf-8"
         )

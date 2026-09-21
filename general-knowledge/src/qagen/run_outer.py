@@ -28,16 +28,20 @@ def candidate_questions(passage: Dict, completions: List[str]) -> List[List[Dict
 
 
 def candidate_reward(gen_accuracies: List[float], gold_accuracies: List[float]):
-    """The candidate picks a self-edit the SEAL way; the reward asks whether that pick beats the
-    average self-edit on the gold questions."""
-    selected = max(range(len(gen_accuracies)), key=lambda position: gen_accuracies[position])
-    margin = gold_accuracies[selected] - mean(gold_accuracies)
-    return selected, margin, int(margin > 0)
+    """The candidate picks the self-edit its questions score best; the reward asks whether that
+    pick beats the average self-edit on the gold questions. Self-edits tied at the top share the
+    pick, so their gold accuracies are averaged (a set that separates nothing earns nothing)."""
+    best = max(gen_accuracies)
+    tied = [position for position, accuracy in enumerate(gen_accuracies) if accuracy == best]
+    picked_gold = mean(gold_accuracies[position] for position in tied)
+    margin = picked_gold - mean(gold_accuracies)
+    return tied, margin, int(margin > 0)
 
 
 def score_passage(policy: Policy, grader: Grader, passage: Dict, iteration: int,
                   passage_index: int, null_pairs: List[Dict[str, str]]) -> Dict:
     """Every candidate picks a self-edit; the reward says whether that pick beats the K-average."""
+    ttt_before, seconds_before = policy.ttt_count, policy.ttt_seconds
     seed = iteration * 10_000 + passage_index
     completions = policy.generate(
         [qa_gen.qa_gen_prompt(passage)] * config.QA_CANDIDATES,
@@ -71,13 +75,13 @@ def score_passage(policy: Policy, grader: Grader, passage: Dict, iteration: int,
         if not pairs:
             candidate_records.append({
                 "index": index, "parse_ok": False, "pair_count": 0, "gen_accuracies": [],
-                "selected": -1, "margin": 0.0, "reward": 0, "answer_in_passage": 0.0,
+                "selected": -1, "tied": [], "margin": 0.0, "reward": 0, "answer_in_passage": 0.0,
                 "duplicate_rate": 0.0, "gold_coverage": 0.0, "correctness": 0.0,
                 "closed_book_gen": 0.0,
             })
             continue
         gen_accuracies = [score[name] for score in scores]
-        selected, margin, reward = candidate_reward(gen_accuracies, gold_accuracies)
+        tied, margin, reward = candidate_reward(gen_accuracies, gold_accuracies)
         correctness = grader.grade_against_passage(
             [(passage["context"], pair["question"], pair["answer"]) for pair in pairs]
         )
@@ -86,7 +90,8 @@ def score_passage(policy: Policy, grader: Grader, passage: Dict, iteration: int,
             "parse_ok": True,
             "pair_count": len(pairs),
             "gen_accuracies": gen_accuracies,
-            "selected": selected,
+            "selected": tied[0],
+            "tied": tied,
             "margin": margin,
             "reward": reward,
             "answer_in_passage": mean(
@@ -117,15 +122,14 @@ def score_passage(policy: Policy, grader: Grader, passage: Dict, iteration: int,
             policy.token_count(self_edit) >= config.SELF_EDIT_MAX_TOKENS for self_edit in self_edits
         ],
         "first_candidate_pairs": next((pairs for pairs in candidates if pairs), []),
+        "ttt_count": policy.ttt_count - ttt_before,
+        "gpu_seconds": policy.ttt_seconds - seconds_before,
     }
 
 
 def run_iteration(policy: Policy, grader: Grader, iteration: int, outer_dir: Path) -> List[Dict]:
     records_path = outer_dir / f"iter{iteration}_records.jsonl"
-    done = {}
-    if records_path.exists():
-        with records_path.open(encoding="utf-8") as records_file:
-            done = {json.loads(line)["key"]: json.loads(line) for line in records_file}
+    done = {record["key"]: record for record in paths.read_jsonl(records_path)}
 
     passages = splits.outer_passages(iteration)
     records = []
@@ -138,8 +142,7 @@ def run_iteration(policy: Policy, grader: Grader, iteration: int, outer_dir: Pat
             continue
         record = score_passage(policy, grader, passage, iteration, passage_index, null_pairs)
         null_pairs = record["first_candidate_pairs"]
-        with records_path.open("a", encoding="utf-8") as records_file:
-            records_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        paths.append_jsonl(records_path, record)
         records.append(record)
         rewarded = sum(candidate["reward"] for candidate in record["candidates"])
         print(f"[outer {iteration}] {passage_index + 1}/{len(passages)} {passage['title'][:40]} "
@@ -154,14 +157,18 @@ def summarize(records: List[Dict], iteration: int, kept: int) -> Dict:
         candidate for candidate in parsed
         if len(set(candidate["gen_accuracies"])) == 1  # questions cannot separate the self-edits
     ]
+    top_ties = [candidate for candidate in parsed if len(candidate.get("tied", [])) > 1]
     return {
         "iteration": iteration,
         "passages": len(records),
         "parse_rate": len(parsed) / len(candidates) if candidates else 0.0,
         "reward_rate": mean(candidate["reward"] for candidate in candidates) if candidates else 0.0,
         "tie_rate": len(ties) / len(parsed) if parsed else 0.0,
+        "top_tie_rate": len(top_ties) / len(parsed) if parsed else 0.0,
         "mean_margin": mean(candidate["margin"] for candidate in parsed) if parsed else 0.0,
         "kept": kept,
+        "ttt_count": sum(record.get("ttt_count", 0) for record in records),
+        "gpu_seconds": sum(record.get("gpu_seconds", 0.0) for record in records),
     }
 
 

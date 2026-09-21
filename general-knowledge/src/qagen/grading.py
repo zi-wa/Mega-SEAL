@@ -1,17 +1,18 @@
 """LLM judge calls: SEAL's grading prompt, background threads, cache, token accounting."""
 import hashlib
-import json
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
+import openai
 from openai import OpenAI
 
 import config
 
 from ..utils import SQUAD_GRADE_TEMPLATE, parse_yes_no
+from .paths import append_jsonl, read_jsonl
 
 # QA_gen answers are model-written, so their correctness is judged against the passage itself
 PASSAGE_GRADE_TEMPLATE = (
@@ -21,7 +22,20 @@ PASSAGE_GRADE_TEMPLATE = (
     "Is the answer correct according to the passage? Respond 'yes' or 'no'."
 )
 
-RETRIES = 5
+RETRY_WINDOW_SECONDS = 30 * 60  # outages shorter than this must not end a multi-day run
+
+
+class EmptyJudgeReply(Exception):
+    pass
+
+
+TRANSIENT_ERRORS = (
+    openai.RateLimitError,
+    openai.APIConnectionError,
+    openai.APITimeoutError,
+    openai.InternalServerError,
+    EmptyJudgeReply,
+)
 
 GradeItem = Tuple[str, str, str]  # question, gold answer, model answer
 PassageItem = Tuple[str, str, str]  # passage, question, answer
@@ -121,16 +135,20 @@ class Grader:
         request = {"model": self.model, "input": prompt}
         if self.reasoning_effort:
             request["reasoning"] = {"effort": self.reasoning_effort}
-        for attempt in range(RETRIES):
+        started = time.time()
+        attempt = 0
+        while True:
             try:
                 response = self.client.responses.create(**request)
-            except Exception as error:
-                failure = error
-                time.sleep(2**attempt)
-                continue
-            self._count(response)
-            return response.output_text
-        raise RuntimeError(f"judge call failed {RETRIES} times: {failure}")
+                self._count(response)
+                if not response.output_text.strip():
+                    raise EmptyJudgeReply("judge returned no text")  # never cache a non-answer
+                return response.output_text
+            except TRANSIENT_ERRORS as error:
+                if time.time() - started > RETRY_WINDOW_SECONDS:
+                    raise RuntimeError(f"judge unavailable for {RETRY_WINDOW_SECONDS // 60} min: {error}")
+                time.sleep(min(60, 2**attempt))
+                attempt += 1
 
     def _count(self, response) -> None:
         with self.lock:
@@ -148,14 +166,9 @@ class Grader:
     def _remember(self, key: str, verdict: bool) -> None:
         with self.lock:
             self.cache[key] = verdict
-            with self.cache_path.open("a", encoding="utf-8") as cache_file:
-                cache_file.write(json.dumps({"key": key, "verdict": verdict}) + "\n")
+            append_jsonl(self.cache_path, {"key": key, "verdict": verdict})
 
     def _load_cache(self) -> None:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        if not self.cache_path.exists():
-            return
-        with self.cache_path.open(encoding="utf-8") as cache_file:
-            for line in cache_file:
-                entry = json.loads(line)
-                self.cache[entry["key"]] = entry["verdict"]
+        for entry in read_jsonl(self.cache_path):
+            self.cache[entry["key"]] = entry["verdict"]

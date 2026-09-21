@@ -1,5 +1,7 @@
 """Where a run writes: results under the repo, adapters under the gitignored models folder."""
+import json
 from pathlib import Path
+from typing import Dict, List
 
 import config
 
@@ -22,3 +24,20 @@ def outer_adapter(iteration: int, chain: str = "main") -> Path:
 
 def se_rl_adapter(condition: str) -> Path:
     return adapter_root() / f"se_rl_{condition}"
+
+
+def read_jsonl(path: Path) -> List[Dict]:
+    """Records of an append-only log; a last line cut short by a kill is trimmed off."""
+    if not path.exists():
+        return []
+    raw = path.read_bytes()
+    complete = raw[: raw.rfind(b"\n") + 1]
+    if len(complete) != len(raw):
+        path.write_bytes(complete)  # the next append must start on a fresh line
+    return [json.loads(line) for line in complete.decode("utf-8").splitlines() if line.strip()]
+
+
+def append_jsonl(path: Path, record: Dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as log:
+        log.write(json.dumps(record, ensure_ascii=False) + "\n")

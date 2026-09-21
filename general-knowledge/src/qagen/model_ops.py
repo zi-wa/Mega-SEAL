@@ -119,9 +119,9 @@ class Policy:
         self.model.eval()
 
     def checkpoint(self) -> Dict[str, torch.Tensor]:
-        """Copies of the linears a merge can touch; unmerging instead would drift in bf16."""
+        """CPU copies of the linears a merge can touch; unmerging instead would drift in bf16."""
         return {
-            name: weight.detach().clone()
+            name: weight.detach().to("cpu", copy=True)
             for name, weight in self.model.named_parameters()
             if name.endswith(MERGED_WEIGHT_SUFFIXES)
         }
@@ -152,6 +152,7 @@ class Policy:
         seed: int,
         pad_to_max: bool = False,
     ):
+        torch.manual_seed(seed)  # LoRA A init draws from the global generator
         adapter = get_peft_model(
             self.model,
             LoraConfig(
@@ -174,10 +175,12 @@ class Policy:
         for _ in range(epochs):
             order = torch.randperm(len(rows), generator=shuffle).tolist()
             for position, row_index in enumerate(order):
+                group_start = position - position % batch_size
+                group_size = min(batch_size, len(rows) - group_start)  # the last group may be short
                 input_ids, labels = rows[row_index]
                 loss = adapter(input_ids=input_ids, labels=labels, use_cache=False).loss
-                (loss / batch_size).backward()
-                if (position + 1) % batch_size == 0 or position + 1 == len(rows):
+                (loss / group_size).backward()
+                if position + 1 == group_start + group_size:
                     optimizer.step()
                     decay.step()
                     optimizer.zero_grad(set_to_none=True)
