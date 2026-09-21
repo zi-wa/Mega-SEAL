@@ -23,8 +23,8 @@ if %errorlevel% neq 0 (
     goto :fail
 )
 
-echo [3/5] Installing torch from the official CUDA 13.0 index ...
-seal_env\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu130
+echo [3/5] Installing torch 2.14.0 from the official CUDA 12.6 index ...
+seal_env\Scripts\python.exe -m pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cu126
 if %errorlevel% neq 0 (
     echo FAILED: could not install torch. Check the network and the NVIDIA driver version.
     goto :fail
