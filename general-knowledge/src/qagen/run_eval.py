@@ -200,9 +200,7 @@ def main() -> None:
                                    progress_path)
         result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         progress_path.unlink(missing_ok=True)
-        (paths.run_dir() / "grader_usage.json").write_text(
-            json.dumps(grader.usage(), indent=2), encoding="utf-8"
-        )
+        grader.save_usage(paths.usage_path("eval"))
         print(f"[eval] {condition} mean {result['mean_accuracy']:.4f}", flush=True)
 
     grader.close()

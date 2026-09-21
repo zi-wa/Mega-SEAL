@@ -1,5 +1,7 @@
 """LLM judge calls: SEAL's grading prompt, background threads, cache, token accounting."""
 import hashlib
+import itertools
+import json
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -23,19 +25,8 @@ PASSAGE_GRADE_TEMPLATE = (
 )
 
 RETRY_WINDOW_SECONDS = 30 * 60  # outages shorter than this must not end a multi-day run
-
-
-class EmptyJudgeReply(Exception):
-    pass
-
-
-TRANSIENT_ERRORS = (
-    openai.RateLimitError,
-    openai.APIConnectionError,
-    openai.APITimeoutError,
-    openai.InternalServerError,
-    EmptyJudgeReply,
-)
+TRANSIENT_ERRORS = (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError,
+                    openai.InternalServerError)
 
 GradeItem = Tuple[str, str, str]  # question, gold answer, model answer
 PassageItem = Tuple[str, str, str]  # passage, question, answer
@@ -97,6 +88,10 @@ class Grader:
             "models": sorted(self.models_seen),
         }
 
+    def save_usage(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.usage(), indent=2), encoding="utf-8")
+
     def close(self) -> None:
         self.pool.shutdown(wait=True)
 
@@ -135,20 +130,18 @@ class Grader:
         request = {"model": self.model, "input": prompt}
         if self.reasoning_effort:
             request["reasoning"] = {"effort": self.reasoning_effort}
-        started = time.time()
-        attempt = 0
-        while True:
+        deadline = time.time() + RETRY_WINDOW_SECONDS
+        for attempt in itertools.count():
             try:
                 response = self.client.responses.create(**request)
                 self._count(response)
-                if not response.output_text.strip():
-                    raise EmptyJudgeReply("judge returned no text")  # never cache a non-answer
-                return response.output_text
-            except TRANSIENT_ERRORS as error:
-                if time.time() - started > RETRY_WINDOW_SECONDS:
-                    raise RuntimeError(f"judge unavailable for {RETRY_WINDOW_SECONDS // 60} min: {error}")
-                time.sleep(min(60, 2**attempt))
-                attempt += 1
+                if response.output_text.strip():  # an empty reply is retried, never cached
+                    return response.output_text
+            except TRANSIENT_ERRORS:
+                pass
+            if time.time() > deadline:
+                raise RuntimeError(f"judge gave no answer for {RETRY_WINDOW_SECONDS // 60} minutes")
+            time.sleep(min(60, 2**attempt))
 
     def _count(self, response) -> None:
         with self.lock:

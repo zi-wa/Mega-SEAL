@@ -231,9 +231,7 @@ def main() -> None:
     base_weights = policy.checkpoint()  # exact rollback for the control chain
     run_main_chain(policy, grader, outer_dir)
     run_random_chain(policy, base_weights, outer_dir)
-    (paths.run_dir() / "grader_usage_outer.json").write_text(
-        json.dumps(grader.usage(), indent=2), encoding="utf-8"
-    )
+    grader.save_usage(paths.usage_path("outer"))
     grader.close()
 
 

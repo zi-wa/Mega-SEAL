@@ -42,6 +42,7 @@ def main() -> None:
     repeat_verdicts = run_grader.grade_uncached(
         [(sample["question"], sample["gold"], sample["prediction"]) for sample in repeat_sample]
     )
+    run_grader.save_usage(paths.usage_path("judge_check"))
     run_grader.close()
 
     run_verdicts = [sample["verdict"] for sample in cross_sample]

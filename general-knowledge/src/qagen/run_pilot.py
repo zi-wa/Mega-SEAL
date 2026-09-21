@@ -107,10 +107,10 @@ def main() -> None:
             "ttt_seconds": ttt_seconds,
             "conditions": conditions,
             "projection_hours": hours,
-            "grader_usage": grader.usage(),
         }, indent=2),
         encoding="utf-8",
     )
+    grader.save_usage(paths.usage_path("pilot"))
     for progress_path in dev_dir.glob("*.progress.jsonl"):
         progress_path.unlink()  # pilot.json now marks the pilot finished
     grader.close()

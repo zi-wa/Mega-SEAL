@@ -1,5 +1,6 @@
 """Where a run writes: results under the repo, adapters under the gitignored models folder."""
 import json
+import time
 from pathlib import Path
 from typing import Dict, List
 
@@ -12,6 +13,14 @@ def run_dir() -> Path:
 
 def adapter_root() -> Path:
     return Path(config.ADAPTER_ROOT) / config.RUN_NAME
+
+
+STARTED = time.strftime("%Y%m%d_%H%M%S")
+
+
+def usage_path(stage: str) -> Path:
+    """One judge-usage file per process, so restarts add up instead of overwriting."""
+    return run_dir() / "usage" / f"{stage}_{STARTED}.json"
 
 
 def cache_path() -> Path:
