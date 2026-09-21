@@ -43,7 +43,7 @@ class Grader:
     ):
         self.model = model
         self.reasoning_effort = reasoning_effort
-        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+        self.client = None  # built on the first uncached call, so cached runs need no key
         self.pool = ThreadPoolExecutor(max_workers=workers)
         self.lock = threading.Lock()
         self.cache_path = Path(cache_path)
@@ -115,6 +115,9 @@ class Grader:
         return verdict
 
     def _ask(self, prompt: str) -> str:
+        with self.lock:
+            if self.client is None:
+                self.client = OpenAI()  # reads OPENAI_API_KEY from the environment
         request = {"model": self.model, "input": prompt}
         if self.reasoning_effort:
             request["reasoning"] = {"effort": self.reasoning_effort}

@@ -120,7 +120,7 @@ def gpt_self_edits(passages: List[Dict]) -> Dict[str, List[str]]:
     edits_path = paths.run_dir() / "val" / "gpt_self_edits.json"
     if edits_path.exists():
         return json.loads(edits_path.read_text(encoding="utf-8"))
-    client = OpenAI(api_key=config.OPENAI_API_KEY)
+    client = OpenAI()  # reads OPENAI_API_KEY from the environment
     edits_by_passage = {}
     for index, passage in enumerate(passages):
         prompt = self_edit_prompt(passage)

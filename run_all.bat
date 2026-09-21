@@ -14,7 +14,13 @@ set CUBLAS_WORKSPACE_CONFIG=:4096:8
 set PYTHON_BIN=seal_env\Scripts\python.exe
 
 if not exist config.py (
-    echo config.py not found. Run setup_win.bat first, then put your OpenAI API key in config.py.
+    echo config.py not found. Run setup_win.bat first.
+    goto :fail
+)
+
+REM The key lives only in the environment; stop now rather than hours into the run.
+if "%OPENAI_API_KEY%"=="" (
+    echo OPENAI_API_KEY is not set. Run: setx OPENAI_API_KEY "sk-..." then open a new window.
     goto :fail
 )
 

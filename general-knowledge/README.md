@@ -60,7 +60,7 @@ setup_win.bat   REM creates seal_env, installs torch (cu130) and requirements-wi
 run_all.bat     REM pilot -> judge check -> outer loop -> SE-RL and evaluation -> summary.md
 ```
 
-Settings live in `config.py` (gitignored, copied from `config.example.py`); the OpenAI key goes
-there. Results are written to `results/qagen/<RUN_NAME>/`, adapters to `models/qagen/<RUN_NAME>/`.
+Settings live in `config.py` (gitignored, copied from `config.example.py`). The OpenAI key is read
+from the environment only: `setx OPENAI_API_KEY "sk-..."`, then open a new window. Results are written to `results/qagen/<RUN_NAME>/`, adapters to `models/qagen/<RUN_NAME>/`.
 Every stage skips finished work, so `run_all.bat` resumes after a stop. Hypotheses and pass
 criteria are fixed in advance in `src/qagen/PREREGISTRATION.md`.

@@ -44,13 +44,16 @@ if not exist config.py (
         echo FAILED: could not copy config.example.py to config.py.
         goto :fail
     )
-    echo Created config.py. Open it and put your OpenAI API key in it before running anything.
+    echo Created config.py with the experiment settings.
 ) else (
     echo config.py already exists, skipping.
 )
 
 echo.
-echo Setup finished. Next step: run run_all.bat
+echo Setup finished.
+echo Set the OpenAI key as an environment variable, not in any file:
+echo     setx OPENAI_API_KEY "sk-..."
+echo Then open a new window and run run_all.bat
 endlocal
 exit /b 0
 

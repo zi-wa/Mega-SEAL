@@ -1,6 +1,5 @@
-# Copy to config.py and fill in OPENAI_API_KEY. config.py is gitignored.
-
-OPENAI_API_KEY = ""
+# Copy to config.py and edit. config.py is gitignored.
+# The OpenAI key is not kept here: it is read from the OPENAI_API_KEY environment variable.
 
 RUN_NAME = "run1"
 
