@@ -8,7 +8,7 @@ echo [1/5] Checking virtual environment seal_env ...
 if not exist seal_env (
     echo Creating seal_env ...
     python -m venv seal_env
-    if errorlevel 1 (
+    if %errorlevel% neq 0 (
         echo FAILED: could not create seal_env. Is Python on PATH?
         goto :fail
     )
@@ -18,21 +18,21 @@ if not exist seal_env (
 
 echo [2/5] Upgrading pip ...
 seal_env\Scripts\python.exe -m pip install --upgrade pip
-if errorlevel 1 (
+if %errorlevel% neq 0 (
     echo FAILED: could not upgrade pip.
     goto :fail
 )
 
 echo [3/5] Installing torch from the official CUDA 13.0 index ...
 seal_env\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu130
-if errorlevel 1 (
+if %errorlevel% neq 0 (
     echo FAILED: could not install torch. Check the network and the NVIDIA driver version.
     goto :fail
 )
 
 echo [4/5] Installing requirements-win.txt ...
 seal_env\Scripts\python.exe -m pip install -r requirements-win.txt
-if errorlevel 1 (
+if %errorlevel% neq 0 (
     echo FAILED: could not install requirements-win.txt.
     goto :fail
 )
@@ -40,7 +40,7 @@ if errorlevel 1 (
 echo [5/5] Checking config.py ...
 if not exist config.py (
     copy config.example.py config.py
-    if errorlevel 1 (
+    if %errorlevel% neq 0 (
         echo FAILED: could not copy config.example.py to config.py.
         goto :fail
     )

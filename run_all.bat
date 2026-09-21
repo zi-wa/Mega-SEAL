@@ -33,8 +33,8 @@ echo ============================================================
 echo Stage 1/5: dev pilot - measures TTT seconds, projects runtime
 echo ============================================================
 %PYTHON_BIN% -m general-knowledge.src.qagen.run_pilot
-if errorlevel 1 (
-    echo FAILED at stage 1: run_pilot.
+if %errorlevel% neq 0 (
+    echo FAILED at stage 1: run_pilot, exit code %errorlevel%.
     goto :fail
 )
 echo.
@@ -46,8 +46,8 @@ echo ============================================================
 echo Stage 2/5: judge agreement check
 echo ============================================================
 %PYTHON_BIN% -m general-knowledge.src.qagen.validate_judge
-if errorlevel 1 (
-    echo FAILED at stage 2: validate_judge.
+if %errorlevel% neq 0 (
+    echo FAILED at stage 2: validate_judge, exit code %errorlevel%.
     goto :fail
 )
 
@@ -55,8 +55,8 @@ echo ============================================================
 echo Stage 3/5: outer loop - trains the question generator
 echo ============================================================
 %PYTHON_BIN% -m general-knowledge.src.qagen.run_outer
-if errorlevel 1 (
-    echo FAILED at stage 3: run_outer.
+if %errorlevel% neq 0 (
+    echo FAILED at stage 3: run_outer, exit code %errorlevel%.
     goto :fail
 )
 
@@ -64,8 +64,8 @@ echo ============================================================
 echo Stage 4/5: SE-RL and held-out evaluation for every condition
 echo ============================================================
 %PYTHON_BIN% -m general-knowledge.src.qagen.run_eval
-if errorlevel 1 (
-    echo FAILED at stage 4: run_eval.
+if %errorlevel% neq 0 (
+    echo FAILED at stage 4: run_eval, exit code %errorlevel%.
     goto :fail
 )
 
@@ -73,8 +73,8 @@ echo ============================================================
 echo Stage 5/5: report
 echo ============================================================
 %PYTHON_BIN% -m general-knowledge.src.qagen.report
-if errorlevel 1 (
-    echo FAILED at stage 5: report.
+if %errorlevel% neq 0 (
+    echo FAILED at stage 5: report, exit code %errorlevel%.
     goto :fail
 )
 
