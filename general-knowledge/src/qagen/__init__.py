@@ -1,4 +1,5 @@
 # Windows consoles here default to cp949 and SQuAD titles are not always ASCII
+import faulthandler
 import os
 import sys
 from datetime import datetime
@@ -34,3 +35,6 @@ if os.environ.get("QAGEN_LOG"):
     _log.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} {' '.join(sys.orig_argv[1:])}\n")
     sys.stdout = _Tee(sys.stdout, _log)
     sys.stderr = _Tee(sys.stderr, _log)
+    faulthandler.enable(file=_log)  # a native crash (CUDA, driver) leaves no Python traceback otherwise
+else:
+    faulthandler.enable()

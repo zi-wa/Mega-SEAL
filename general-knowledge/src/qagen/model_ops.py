@@ -37,6 +37,7 @@ class Policy:
         model, loading_info = getattr(transformers, config.MODEL_CLASS).from_pretrained(
             model_name,
             dtype=torch.bfloat16,
+            device_map=device,  # straight onto the GPU; a CPU copy first doubles peak RAM
             output_loading_info=True,
             key_mapping=TEXT_KEY_MAPPING,
         )
@@ -47,8 +48,10 @@ class Policy:
         broken += list(loading_info["mismatched_keys"])
         if broken:
             raise RuntimeError(f"checkpoint keys missing or mismatched: {broken[:10]}")
-        model.to(device)
         model.eval()
+        if device.startswith("cuda"):
+            print(f"[model] loaded on {device}, {torch.cuda.memory_allocated() / 2**30:.1f} GiB in use",
+                  flush=True)
         return cls(model, tokenizer, device)
 
     @torch.inference_mode()
