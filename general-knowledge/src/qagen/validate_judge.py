@@ -10,7 +10,14 @@ import config
 
 from . import paths
 from .grading import Grader
-from .report import cohens_kappa
+
+
+def cohens_kappa(first_labels, second_labels):
+    agreement = sum(a == b for a, b in zip(first_labels, second_labels)) / len(first_labels)
+    first_yes = sum(first_labels) / len(first_labels)
+    second_yes = sum(second_labels) / len(second_labels)
+    chance = first_yes * second_yes + (1 - first_yes) * (1 - second_yes)
+    return float("nan") if chance == 1 else (agreement - chance) / (1 - chance)
 
 
 def main() -> None:

@@ -8,3 +8,5 @@ logs/
 models/
 config.py
 general-knowledge/tests/
+general-knowledge/src/qagen/report.py
+reset_run.bat
