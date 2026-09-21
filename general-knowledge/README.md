@@ -58,6 +58,7 @@ Runs in one process with transformers and PEFT (no vLLM, no ZMQ), on a single GP
 ```bat
 setup_win.bat   REM creates seal_env, installs torch (cu130) and requirements-win.txt, copies config.py
 run_all.bat     REM pilot -> judge check -> outer loop -> SE-RL and evaluation -> summary.md
+reset_run.bat   REM deletes the current run's results, adapters and log to start over
 ```
 
 Settings live in `config.py` (gitignored, copied from `config.example.py`). The OpenAI key is read
