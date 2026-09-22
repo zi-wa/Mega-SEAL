@@ -4,6 +4,7 @@ Run as `python -m general-knowledge.src.qagen.run_pilot`. Uses the dev passages 
 validation passages stay untouched until the final evaluation.
 """
 import json
+import time
 from typing import Dict, List
 
 import config
@@ -22,7 +23,7 @@ from .model_ops import Policy
 SAMPLE_PASSAGES = 10  # judge-validation answers come from this many dev passages
 
 
-def projected_hours(ttt_seconds: float) -> Dict[str, float]:
+def projected_hours(cycle_seconds: float) -> Dict[str, float]:
     outer = config.OUTER_ITERATIONS * config.OUTER_PASSAGES * config.SELF_EDITS * config.TTT_SEEDS
     se_rl_runs = 6  # qa0_sup, qagen_n0, qagen_nN x 3 seeds, qagen_randR
     se_rl = (se_rl_runs * config.SE_RL_ROUNDS * config.SE_RL_PASSAGES
@@ -30,9 +31,9 @@ def projected_hours(ttt_seconds: float) -> Dict[str, float]:
     val_conditions = 12  # every condition whose evaluation adapts, see run_eval.ORDER
     validation = val_conditions * config.VAL_PASSAGES * config.VAL_SELF_EDITS
     hours = {
-        "outer": outer * ttt_seconds / 3600,
-        "se_rl": se_rl * ttt_seconds / 3600,
-        "validation": validation * ttt_seconds / 3600,
+        "outer": outer * cycle_seconds / 3600,
+        "se_rl": se_rl * cycle_seconds / 3600,
+        "validation": validation * cycle_seconds / 3600,
     }
     hours["total_ttt"] = sum(hours.values())
     hours["ttt_count"] = outer + se_rl + validation
@@ -84,11 +85,14 @@ def main() -> None:
     for label, source in [("closed_book", lambda passage: []),
                           ("passage_only", lambda passage: [""]),
                           ("base_se", one_self_edit)]:
+        started, ttt_before = time.time(), policy.ttt_count
         measured = evaluate_passages(policy, grader, passages, source, f"dev_{label}",
                                      dev_dir / f"{label}.progress.jsonl")
         conditions[label] = measured["mean_accuracy"]
         if label == "base_se":
             ttt_seconds = measured["gpu_seconds"] / max(measured["ttt_count"], 1)
+            # self-edit sampling, LoRA training, answers and judge waits per adaptation
+            cycle_seconds = (time.time() - started) / max(policy.ttt_count - ttt_before, 1)
 
     config.SEAL_PAD_QUIRK = True  # ablation: SEAL pads to 2048 with eos and trains on the padding
     padded = evaluate_passages(policy, grader, passages, one_self_edit, "dev_base_se_seal_padding",
@@ -101,10 +105,11 @@ def main() -> None:
         json.dumps(samples, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    hours = projected_hours(ttt_seconds)
+    hours = projected_hours(cycle_seconds)
     pilot_path.write_text(
         json.dumps({
             "ttt_seconds": ttt_seconds,
+            "cycle_seconds": cycle_seconds,
             "conditions": conditions,
             "projection_hours": hours,
         }, indent=2),
@@ -115,12 +120,13 @@ def main() -> None:
         progress_path.unlink()  # pilot.json now marks the pilot finished
     grader.close()
 
-    print(f"[pilot] one TTT takes {ttt_seconds:.1f}s", flush=True)
+    print(f"[pilot] one adaptation cycle takes {cycle_seconds:.1f}s "
+          f"(LoRA training alone {ttt_seconds:.1f}s)", flush=True)
     print(f"[pilot] closed book {conditions['closed_book']:.3f} | "
           f"passage only {conditions['passage_only']:.3f} | "
           f"self-edit {conditions['base_se']:.3f} | "
           f"self-edit with SEAL padding {conditions['base_se_seal_padding']:.3f}", flush=True)
-    print(f"[pilot] projected TTT hours: outer {hours['outer']:.1f}, se-rl {hours['se_rl']:.1f}, "
+    print(f"[pilot] projected hours: outer {hours['outer']:.1f}, se-rl {hours['se_rl']:.1f}, "
           f"validation {hours['validation']:.1f}, total {hours['total_ttt']:.1f} "
           f"over {int(hours['ttt_count'])} adaptations", flush=True)
 
