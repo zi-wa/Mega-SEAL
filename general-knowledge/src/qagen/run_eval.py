@@ -89,10 +89,10 @@ def generated_questions(policy: Policy, passages: List[Dict], questions_key: str
 def train_se_rl(policy: Policy, grader: Grader, condition: str,
                 reward_questions: Optional[Callable[[Dict], QuestionSet]], seed: int) -> None:
     """Two ReST-EM rounds over the unlabeled passages; a saved round is replayed, not repeated."""
-    passages = splits.se_rl_passages()
     serl_dir = paths.run_dir() / "serl"
     serl_dir.mkdir(parents=True, exist_ok=True)
     for round_index in range(config.SE_RL_ROUNDS):
+        passages = splits.se_rl_passages(round_index)
         adapter_dir = paths.se_rl_adapter(f"{condition}_r{round_index}")
         round_path = serl_dir / f"{condition}_round{round_index}.json"
         if round_path.exists():
@@ -170,7 +170,9 @@ def prepare(condition: str, policy: Policy, base_weights, grader: Grader) -> Cal
         seed = int(condition[-1]) if condition.startswith("qagen_nN_seed") else 0
         # the three seeds share one question set: only the ReST-EM sampling differs
         questions_key = "qagen_nN" if condition.startswith("qagen_nN") else condition
-        pairs_by_passage = generated_questions(policy, splits.se_rl_passages(), questions_key)
+        round_passages = [passage for round_index in range(config.SE_RL_ROUNDS)
+                          for passage in splits.se_rl_passages(round_index)]
+        pairs_by_passage = generated_questions(policy, round_passages, questions_key)
         reward = lambda passage: question_items(
             passage["title"], pairs_by_passage[splits.passage_key(passage)]
         )

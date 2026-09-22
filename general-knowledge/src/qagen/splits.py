@@ -9,8 +9,10 @@ import config
 
 Passage = Dict[str, Any]
 
-DEV_START = 50
-OUTER_POOL_START = 80
+# SEAL's 3B run took a fresh block per ReST-EM round ([0:50], then [50:100]); dev and the
+# outer-loop pool come after those blocks
+DEV_START = config.SE_RL_ROUNDS * config.SE_RL_PASSAGES
+OUTER_POOL_START = DEV_START + config.DEV_PASSAGES
 MIN_GOLD_QUESTIONS = 5  # coarse reward scores otherwise: 1/4 of a question per step
 
 
@@ -27,8 +29,9 @@ def _shuffled(path: str) -> tuple:
     return tuple(passages)
 
 
-def se_rl_passages() -> List[Passage]:
-    return list(_shuffled(config.SQUAD_TRAIN)[: config.SE_RL_PASSAGES])
+def se_rl_passages(round_index: int) -> List[Passage]:
+    start = round_index * config.SE_RL_PASSAGES
+    return list(_shuffled(config.SQUAD_TRAIN)[start : start + config.SE_RL_PASSAGES])
 
 
 def dev_passages() -> List[Passage]:
