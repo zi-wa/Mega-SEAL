@@ -213,6 +213,8 @@ def evaluate_passages(policy: Policy, grader: Grader, passages: Sequence[Dict],
             pending = [closed_book_scores(policy, grader, question_sets, seed=passage_index)]
         accuracies = [entry.means()["gold"] for entry in pending]
         record = {
+            "gold_answers": [item["answer"] for item in question_sets["gold"]],
+            "answers": [entry.answers[0]["gold"] for entry in pending],
             "key": key,
             "title": passage["title"],
             "question_count": len(question_sets["gold"]),
