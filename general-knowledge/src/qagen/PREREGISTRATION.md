@@ -8,7 +8,7 @@
 ## 연구 질문
 
 - RQ1: 모델이 스스로 만든 질문(QA_gen)이 골드 질문 정확도의 대리 지표로 쓸 만한지 여부, 외부 반복에 따른 생성 품질 붕괴 여부
-- RQ2: QA_gen 보상으로 돌린 외부 루프(qagen)가 SEAL 의 self-edit RL(base_se) 대비 검증 정확도를 올리는지 여부
+- RQ2: QA_gen 보상으로 돌린 외부 루프(qagen)가 RL 전 기본 모델의 self-edit(base_se, SEAL 논문의 Passage + Synthetic 기준선) 대비 검증 정확도를 올리는지 여부
 
 ## 가설과 검정 순서
 

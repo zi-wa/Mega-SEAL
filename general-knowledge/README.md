@@ -75,6 +75,8 @@ LoRA and optimizer settings. Differences from SEAL:
 - judge gpt-5.6-luna, greedy like SEAL (SEAL: gpt-4.1)
 - TTT sequences are not padded to 2048 tokens with EOS; a single EOS is appended
 - self-edits are capped at 1024 new tokens (SEAL: 8192)
+- SFT examples share the 2048-token cap with TTT (never reached: longest prompt 1008 + 1024-token
+  self-edit + EOS = 2033 tokens; SEAL: no cap)
 - self-edits are split by newline as in paper B.3 (SEAL's released query_server.sh never passes the flag)
 - evaluation samples 3 self-edits per validation passage (SEAL: 1)
 - one GPU: SFT batch 10 by gradient accumulation
