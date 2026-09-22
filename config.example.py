@@ -3,9 +3,8 @@
 
 RUN_NAME = "run1"
 
-MODEL_NAME = "google/gemma-4-E2B"
-# AutoModelForCausalLM resolves gemma4 to the multimodal class; this study is text only
-MODEL_CLASS = "Gemma4ForCausalLM"
+MODEL_NAME = "Qwen/Qwen2.5-3B"  # SEAL's scaled-down model (paper B.7), reference results in the repo
+MODEL_CLASS = "AutoModelForCausalLM"
 DEVICE = "cuda"
 
 # judge frozen before the main run; cache keys include the model name
@@ -42,7 +41,6 @@ ANSWER_MAX_TOKENS = 64
 # inner loop LoRA (SEAL code defaults)
 TTT_LORA_RANK = 32
 TTT_LORA_ALPHA = 64
-# gemma-4-E2B shares KV across its last 20 layers, so v_proj exists in the first 15 only
 TTT_TARGET_MODULES = ("q_proj", "v_proj")
 TTT_EPOCHS = 10
 TTT_LR = 1e-3
