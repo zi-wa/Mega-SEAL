@@ -6,8 +6,6 @@ from typing import Dict, List, Sequence
 
 import config
 
-from ..data_generation.make_squad_data import MAKE_SQUAD_DATA_TEMPLATES_BASE
-
 # answers labelled "Answer:", "Answer 2:" or "A:"; unlabelled lines are not trusted because the
 # base model trails off into leaked prompt text ("You are an AI assistant...")
 _QA_ITEM = re.compile(
@@ -15,7 +13,14 @@ _QA_ITEM = re.compile(
     r"(?:Answer|A)\s*(?P<anum>\d*)\s*[:.]\s*(?P<answer>[^\n]+)",
     re.IGNORECASE,
 )
-QA_GEN_TEMPLATE = MAKE_SQUAD_DATA_TEMPLATES_BASE["self-qa"]  # SEAL original, unchanged
+# shaped like the gold questions: about 5 per passage, short answers copied from the passage
+QA_GEN_TEMPLATE = (
+    "Let's read the following passage and write 5 questions that can be answered from it. "
+    "Each answer must be a short phrase of a few words copied exactly from the passage, "
+    "written on the line after its question and starting with \"Answer:\".\n\n"
+    "Passage:\n{title}\n{context}\n\n"
+    "Question 1: "
+)
 _PUNCTUATION = str.maketrans("", "", string.punctuation)
 _ARTICLES = {"a", "an", "the"}
 
