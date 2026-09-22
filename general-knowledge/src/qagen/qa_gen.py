@@ -8,8 +8,11 @@ import config
 
 from ..data_generation.make_squad_data import MAKE_SQUAD_DATA_TEMPLATES_BASE
 
+# answers labelled "Answer:", "Answer 2:" or "A:"; unlabelled lines are not trusted because the
+# base model trails off into leaked prompt text ("You are an AI assistant...")
 _QA_ITEM = re.compile(
-    r"Question\s*\d*\s*[:.]?\s*(?P<question>[^\n]+)\n+\s*Answer\s*\d*\s*[:.]?\s*(?P<answer>[^\n]+)",
+    r"Question\s*(?P<qnum>\d*)\s*[:.]?\s*(?P<question>[^\n]+)\n+\s*"
+    r"(?:Answer|A)\s*(?P<anum>\d*)\s*[:.]\s*(?P<answer>[^\n]+)",
     re.IGNORECASE,
 )
 QA_GEN_TEMPLATE = MAKE_SQUAD_DATA_TEMPLATES_BASE["self-qa"]  # SEAL original, unchanged
@@ -26,6 +29,8 @@ def parse_qa_pairs(completion: str, max_pairs: int = config.QA_GEN_MAX_PAIRS) ->
     pairs: List[Dict[str, str]] = []
     seen = set()
     for match in _QA_ITEM.finditer(text):
+        if match.group("qnum") and match.group("anum") and match.group("qnum") != match.group("anum"):
+            continue  # answers listed after all the questions: this one belongs to another question
         question = " ".join(match.group("question").split())
         answer = " ".join(match.group("answer").split())
         fingerprint = normalize(question)
