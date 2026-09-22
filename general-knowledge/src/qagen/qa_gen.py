@@ -6,19 +6,13 @@ from typing import Dict, List, Sequence
 
 import config
 
-# base-model prompt in SEAL's style: the first stem is part of the prompt so the format is fixed
-QA_GEN_TEMPLATE = (
-    "Let's read the following passage and write questions that check whether a reader has learned "
-    "its content, each with a short answer. Write every item as \"Question N: ...\" on one line "
-    "and \"Answer: ...\" on the next line.\n\n"
-    "Passage:\n{title}\n{context}\n\n"
-    "Question 1: "
-)
+from ..data_generation.make_squad_data import MAKE_SQUAD_DATA_TEMPLATES_BASE
 
 _QA_ITEM = re.compile(
-    r"Question\s*\d*\s*[:.]?\s*(?P<question>[^\n]+)\n+\s*Answer\s*[:.]?\s*(?P<answer>[^\n]+)",
+    r"Question\s*\d*\s*[:.]?\s*(?P<question>[^\n]+)\n+\s*Answer\s*\d*\s*[:.]?\s*(?P<answer>[^\n]+)",
     re.IGNORECASE,
 )
+QA_GEN_TEMPLATE = MAKE_SQUAD_DATA_TEMPLATES_BASE["self-qa"]  # SEAL original, unchanged
 _PUNCTUATION = str.maketrans("", "", string.punctuation)
 _ARTICLES = {"a", "an", "the"}
 
