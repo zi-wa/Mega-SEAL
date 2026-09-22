@@ -65,8 +65,9 @@ from the environment only: `setx OPENAI_API_KEY "sk-..."`, then open a new windo
 Every stage skips finished work, so `run_all.bat` resumes after a stop. The window stays open at the end, and all stage output, including any traceback, is appended to `logs/run_all.log`. Hypotheses and pass
 criteria are fixed in advance in `src/qagen/PREREGISTRATION.md`.
 
-Only the outer loop is new. Everything else follows SEAL's code: the `implications` self-edit
-prompt, the `self-qa` prompt (reused for the generated questions), the answer and grading
+Only the outer loop is new, including its question-writing prompt (`qa_gen.py`: 5 questions with
+short answers copied from the passage, shaped like the gold questions). Everything else follows
+SEAL's code: the `implications` self-edit prompt, the answer and grading
 prompts, `build_train_sequences`, the SQuAD shuffle, best-of-5 ReST-EM over 3 seeds, and the
 LoRA and optimizer settings. Differences from SEAL:
 
@@ -77,7 +78,6 @@ LoRA and optimizer settings. Differences from SEAL:
 - self-edits are split by newline as in paper B.3 (SEAL's released query_server.sh never passes the flag)
 - evaluation samples 3 self-edits per validation passage (SEAL: 1)
 - one GPU: SFT batch 10 by gradient accumulation
-- the `self-qa` prompt, a self-edit format in SEAL (paper B.11), writes the evaluation questions here
 
 Departures from the proposal (창재0708):
 
