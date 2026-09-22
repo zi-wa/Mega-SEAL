@@ -10,9 +10,10 @@ import config
 # base model trails off into leaked prompt text ("You are an AI assistant...")
 _QA_ITEM = re.compile(
     r"Question\s*(?P<qnum>\d*)\s*[:.]?\s*(?P<question>[^\n]+)\n+\s*"
-    r"(?:Answer|A)\s*(?P<anum>\d*)\s*[:.]\s*(?P<answer>[^\n]+)",
+    r"(?:Answer|A)\s*(?P<anum>\d*)\s*[:.]\s*(?!Question)(?P<answer>[^\n]+)",
     re.IGNORECASE,
 )
+_LEADING_QUESTION = re.compile(r"Question\s*\d*\s*[:.]", re.IGNORECASE)
 # shaped like the gold questions: about 5 per passage, short answers copied from the passage
 QA_GEN_TEMPLATE = (
     "Let's read the following passage and write 5 questions that can be answered from it. "
@@ -30,7 +31,9 @@ def qa_gen_prompt(passage: Dict[str, str]) -> str:
 
 
 def parse_qa_pairs(completion: str, max_pairs: int = config.QA_GEN_MAX_PAIRS) -> List[Dict[str, str]]:
-    text = "Question 1: " + completion.strip()
+    text = completion.strip()
+    if not _LEADING_QUESTION.match(text):
+        text = "Question 1: " + text  # the prompt itself ends with the first label
     pairs: List[Dict[str, str]] = []
     seen = set()
     for match in _QA_ITEM.finditer(text):
