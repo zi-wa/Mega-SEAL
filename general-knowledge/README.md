@@ -64,3 +64,14 @@ Settings live in `config.py` (gitignored, copied from `config.example.py`). The 
 from the environment only: `setx OPENAI_API_KEY "sk-..."`, then open a new window. Results are written to `results/qagen/<RUN_NAME>/`, adapters to `models/qagen/<RUN_NAME>/`.
 Every stage skips finished work, so `run_all.bat` resumes after a stop. The window stays open at the end, and all stage output, including any traceback, is appended to `logs/run_all.log`. Hypotheses and pass
 criteria are fixed in advance in `src/qagen/PREREGISTRATION.md`.
+
+Only the outer loop is new. Everything else follows SEAL's code: the `implications` self-edit
+prompt, the `self-qa` prompt (reused for the generated questions), the answer and grading
+prompts, `build_train_sequences`, the SQuAD shuffle, best-of-5 ReST-EM over 3 seeds, and the
+LoRA and optimizer settings. Differences from SEAL:
+
+- model Qwen2.5-3B (SEAL's main runs use Qwen2.5-7B), judge gpt-5.6-luna (SEAL: gpt-4.1)
+- TTT sequences are not padded to 2048 tokens with EOS
+- self-edits are capped at 512 new tokens (SEAL: 8192)
+- evaluation samples 3 self-edits per validation passage (SEAL: 1)
+- one GPU: SFT batch 10 by gradient accumulation
