@@ -72,7 +72,7 @@ prompts, `build_train_sequences`, the SQuAD shuffle, best-of-5 ReST-EM over 3 se
 LoRA and optimizer settings. Differences from SEAL:
 
 - model Qwen2.5-3B (SEAL's main runs use Qwen2.5-7B; proposal allows 1B-8B, slides said ~2B)
-- judge gpt-5.6-luna with the API's default decoding (SEAL: gpt-4.1, greedy)
+- judge gpt-5.6-luna, greedy like SEAL (SEAL: gpt-4.1)
 - TTT sequences are not padded to 2048 tokens with EOS; a single EOS is appended
 - self-edits are capped at 1024 new tokens (SEAL: 8192)
 - self-edits are split by newline as in paper B.3 (SEAL's released query_server.sh never passes the flag)
