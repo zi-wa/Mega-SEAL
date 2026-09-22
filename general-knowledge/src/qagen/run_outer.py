@@ -76,15 +76,11 @@ def score_passage(policy: Policy, grader: Grader, passage: Dict, iteration: int,
             candidate_records.append({
                 "index": index, "parse_ok": False, "pair_count": 0, "gen_accuracies": [],
                 "selected": -1, "tied": [], "margin": 0.0, "reward": 0, "answer_in_passage": 0.0,
-                "duplicate_rate": 0.0, "gold_coverage": 0.0, "correctness": 0.0,
-                "closed_book_gen": 0.0,
+                "duplicate_rate": 0.0, "gold_coverage": 0.0, "closed_book_gen": 0.0,
             })
             continue
         gen_accuracies = [score[name] for score in scores]
         tied, margin, reward = candidate_reward(gen_accuracies, gold_accuracies)
-        correctness = grader.grade_against_passage(
-            [(passage["context"], pair["question"], pair["answer"]) for pair in pairs]
-        )
         candidate_records.append({
             "index": index,
             "parse_ok": True,
@@ -101,7 +97,6 @@ def score_passage(policy: Policy, grader: Grader, passage: Dict, iteration: int,
             "gold_coverage": qa_gen.gold_coverage(
                 gold_answers, [pair["answer"] for pair in pairs]
             ),
-            "correctness": mean(correctness),
             "closed_book_gen": baseline[name],
         })
 

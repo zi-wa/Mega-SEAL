@@ -16,20 +16,11 @@ import config
 from ..utils import SQUAD_GRADE_TEMPLATE, parse_yes_no
 from .paths import append_jsonl, read_jsonl
 
-# QA_gen answers are model-written, so their correctness is judged against the passage itself
-PASSAGE_GRADE_TEMPLATE = (
-    "You are a grading assistant. Decide whether the answer to the question is correct according "
-    "to the passage alone. Do not use any outside knowledge. Respond ONLY with 'yes' or 'no'.\n\n"
-    "Passage:\n{passage}\n\nQuestion: {question}\nAnswer: {answer}\n"
-    "Is the answer correct according to the passage? Respond 'yes' or 'no'."
-)
-
 RETRY_WINDOW_SECONDS = 30 * 60  # outages shorter than this must not end a multi-day run
 TRANSIENT_ERRORS = (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError,
                     openai.InternalServerError)
 
 GradeItem = Tuple[str, str, str]  # question, gold answer, model answer
-PassageItem = Tuple[str, str, str]  # passage, question, answer
 
 
 def _template_id(template: str) -> str:
@@ -65,10 +56,6 @@ class Grader:
 
     def grade(self, items: Sequence[GradeItem]) -> List[bool]:
         return [pending.result() for pending in self.submit(items)]
-
-    def grade_against_passage(self, items: Sequence[PassageItem]) -> List[bool]:
-        return [pending.result() for pending in
-                [self.pool.submit(self._passage_verdict, item) for item in items]]
 
     def grade_uncached(self, items: Sequence[GradeItem]) -> List[bool]:
         """Second opinion from the same judge, for the self-consistency check."""
@@ -111,17 +98,6 @@ class Grader:
         question, gold, prediction = item
         prompt = SQUAD_GRADE_TEMPLATE.format(question=question, gold=gold, pred=prediction.strip())
         return parse_yes_no(self._ask(prompt))
-
-    def _passage_verdict(self, item: PassageItem) -> bool:
-        passage, question, answer = item
-        key = self._key(_template_id(PASSAGE_GRADE_TEMPLATE), passage, question, answer)
-        cached = self.cache.get(key)
-        if cached is not None:
-            return cached
-        prompt = PASSAGE_GRADE_TEMPLATE.format(passage=passage, question=question, answer=answer)
-        verdict = parse_yes_no(self._ask(prompt))
-        self._remember(key, verdict)
-        return verdict
 
     def _ask(self, prompt: str) -> str:
         with self.lock:
