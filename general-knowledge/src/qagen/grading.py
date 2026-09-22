@@ -103,7 +103,7 @@ class Grader:
         with self.lock:
             if self.client is None:
                 self.client = OpenAI()  # reads OPENAI_API_KEY from the environment
-        request = {"model": self.model, "input": prompt}
+        request = {"model": self.model, "input": prompt, "temperature": 0}  # greedy, as SEAL's B.4 grading
         if self.reasoning_effort:
             request["reasoning"] = {"effort": self.reasoning_effort}
         deadline = time.time() + RETRY_WINDOW_SECONDS
