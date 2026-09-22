@@ -174,7 +174,8 @@ class Policy:
         adapter.train()
         rows = [self._encode(prompt, target, pad_to_max) for prompt, target in examples]
         trainable = [weight for weight in adapter.parameters() if weight.requires_grad]
-        optimizer = torch.optim.AdamW(trainable, lr=learning_rate)
+        # HF Trainer defaults, which SEAL's TTT server and SFT trainer ran with
+        optimizer = torch.optim.AdamW(trainable, lr=learning_rate, weight_decay=0.0)
         total_steps = epochs * math.ceil(len(rows) / batch_size)
         decay = torch.optim.lr_scheduler.LambdaLR(
             optimizer, lambda step: max(0.0, 1.0 - step / total_steps)
@@ -189,6 +190,7 @@ class Policy:
                 loss = adapter(input_ids=input_ids, labels=labels, use_cache=False).loss
                 (loss / group_size).backward()
                 if position + 1 == group_start + group_size:
+                    torch.nn.utils.clip_grad_norm_(trainable, 1.0)
                     optimizer.step()
                     decay.step()
                     optimizer.zero_grad(set_to_none=True)
