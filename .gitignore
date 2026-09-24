@@ -9,4 +9,7 @@ models/
 config.py
 general-knowledge/tests/
 general-knowledge/src/qagen/report.py
+general-knowledge/src/qagen/report_ko.py
+general-knowledge/src/qagen/figures.py
+general-knowledge/src/qagen/figure_reward.py
 reset_run.bat
