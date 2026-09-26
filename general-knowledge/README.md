@@ -49,41 +49,15 @@ sbatch general-knowledge/scripts/continual_self_edits.sh
 
 ## Self-generated evaluation questions (qagen)
 
-Extension of the SEAL pipeline for the study in `Docs`: the model writes its own evaluation
-questions for an unlabeled passage, those questions drive the self-edit ReST-EM loop, and an outer
-loop rewards the question sets whose pick also helps on the gold questions.
-
-Runs in one process with transformers and PEFT (no vLLM, no ZMQ), on a single GPU under Windows.
+Single-GPU Windows port of the knowledge-incorporation loop (transformers + PEFT, no vLLM) in
+which the model writes its own evaluation questions for a passage and uses them as the ReST-EM
+reward for its self-edits. Code in `src/qagen/`.
 
 ```bat
-setup_win.bat   REM creates seal_env, installs torch 2.14.0 (cu126, driver 560+) and requirements-win.txt, copies config.py
-run_all.bat     REM pilot -> judge check -> outer loop -> SE-RL and evaluation -> summary.md
+setup_win.bat   REM venv, torch cu126, requirements-win.txt, config.py from config.example.py
+run_all.bat     REM resumable; results in results/qagen/<RUN_NAME>/, adapters in models/qagen/<RUN_NAME>/
 ```
 
-Settings live in `config.py` (gitignored, copied from `config.example.py`). The OpenAI key is read
-from the environment only: `setx OPENAI_API_KEY "sk-..."`, then open a new window. Results are written to `results/qagen/<RUN_NAME>/`, adapters to `models/qagen/<RUN_NAME>/`.
-Every stage skips finished work, so `run_all.bat` resumes after a stop. The window stays open at the end, and all stage output, including any traceback, is appended to `logs/run_all.log`. Hypotheses and pass
-criteria are fixed in advance in `src/qagen/PREREGISTRATION.md`.
-
-Only the outer loop is new, including its question-writing prompt (`qa_gen.py`: 5 questions with
-short answers copied from the passage, shaped like the gold questions). Everything else follows
-SEAL's code: the `implications` self-edit prompt, the answer and grading
-prompts, `build_train_sequences`, the SQuAD shuffle, best-of-5 ReST-EM over 3 seeds, and the
-LoRA and optimizer settings. Differences from SEAL:
-
-- model Qwen2.5-3B (SEAL's main runs use Qwen2.5-7B; proposal allows 1B-8B, slides said ~2B)
-- judge gpt-5.6-luna, greedy like SEAL (SEAL: gpt-4.1)
-- TTT sequences are not padded to 2048 tokens with EOS; a single EOS is appended
-- self-edits are capped at 1024 new tokens (SEAL: 8192)
-- SFT examples share the 2048-token cap with TTT (never reached: longest prompt 1008 + 1024-token
-  self-edit + EOS = 2033 tokens; SEAL: no cap)
-- self-edits are split by newline as in paper B.3 (SEAL's released query_server.sh never passes the flag)
-- evaluation samples 3 self-edits per validation passage (SEAL: 1)
-- one GPU: SFT batch 10 by gradient accumulation
-
-Departures from the proposal (창재0708):
-
-- R scores the self-edit that the generated questions pick against the average of the K self-edits,
-  on the same passage's gold questions; there is no separate C' and no SE-RL step before R
-- 6 question-set candidates per passage; the rewarded one with the largest margin is kept
-- SE-RL keeps the best of K self-edits per passage (SEAL B.2) rather than a 0/1 improvement reward
+`OPENAI_API_KEY` is read from the environment. Compared with the SEAL code: Qwen2.5-3B, judge
+gpt-5.6-luna, self-edits capped at 1024 tokens, no EOS padding of TTT sequences, 3 self-edits per
+validation passage, SFT batch 10 by gradient accumulation.
