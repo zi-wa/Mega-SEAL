@@ -14,3 +14,4 @@ general-knowledge/src/qagen/figures.py
 general-knowledge/src/qagen/figure_reward.py
 reset_run.bat
 general-knowledge/GLOSSARY.md
+general-knowledge/src/qagen/PREREGISTRATION*.md
