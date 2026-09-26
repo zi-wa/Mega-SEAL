@@ -1,7 +1,8 @@
 # Copy to config.py and edit. config.py is gitignored.
 # The OpenAI key is not kept here: it is read from the OPENAI_API_KEY environment variable.
 
-RUN_NAME = "run1"
+RUN_NAME = "run2"
+CACHE_FROM_RUN = "run1"  # judge cache and judge validation copied from this finished run
 
 MODEL_NAME = "Qwen/Qwen2.5-3B"  # SEAL's scaled-down model (paper B.7), reference results in the repo
 MODEL_CLASS = "AutoModelForCausalLM"
@@ -25,6 +26,7 @@ SELF_EDITS = 5  # K, SEAL B.2
 TTT_SEEDS = 3  # SEAL B.2 averages each self-edit over 3 seeds
 SE_RL_ROUNDS = 2  # SEAL B.2
 SE_RL_PASSAGES = 50  # SEAL B.2
+SE_RL_RESERVE = 50  # replacements for passages whose question set falls short
 DEV_PASSAGES = 30
 VAL_PASSAGES = 200  # SEAL B.4
 VAL_SELF_EDITS = 3  # fresh self-edits per passage, one TTT each
@@ -36,6 +38,8 @@ GEN_BATCH = 16
 SELF_EDIT_MAX_TOKENS = 1024
 QA_GEN_MAX_TOKENS = 512
 QA_GEN_MAX_PAIRS = 10
+QA_QUESTIONS = 15  # reward questions per passage, same count for every passage
+QA_GEN_SAMPLES = 8  # completions of the 5-question prompt pooled per passage
 ANSWER_MAX_TOKENS = 64
 
 # inner loop LoRA (SEAL code defaults)

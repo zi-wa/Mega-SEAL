@@ -79,6 +79,22 @@ def answer_in_passage(answer: str, context: str) -> bool:
     return normalize(answer) in normalize(context)
 
 
+def dedup_pairs(pairs: Sequence[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Pooling several completions repeats facts; one pair per normalized answer span (the same
+    rule as duplicate_rate), first occurrence kept, so paraphrases cannot inflate the count."""
+    kept: List[Dict[str, str]] = []
+    seen_answers: set = set()
+    seen_questions: set = set()
+    for pair in pairs:
+        question, answer = normalize(pair["question"]), normalize(pair["answer"])
+        if not answer or answer in seen_answers or question in seen_questions:
+            continue
+        seen_answers.add(answer)
+        seen_questions.add(question)
+        kept.append(pair)
+    return kept
+
+
 def duplicate_rate(pairs: Sequence[Dict[str, str]]) -> float:
     if not pairs:
         return 0.0

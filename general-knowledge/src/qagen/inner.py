@@ -1,4 +1,5 @@
 """Inner loop: self-edit, temporary LoRA, closed-book answers, graded accuracy, ReST-EM rounds."""
+import hashlib
 import random
 from pathlib import Path
 from statistics import mean
@@ -33,6 +34,10 @@ def question_items(title: str, pairs: Sequence[Dict[str, str]]) -> QuestionSet:
 
 def gold_questions(passage: Dict) -> QuestionSet:
     return question_items(passage["title"], passage["questions"])
+
+
+def self_edit_sha1(self_edit: str) -> str:
+    return hashlib.sha1(self_edit.encode("utf-8")).hexdigest()[:12]
 
 
 def sample_self_edits(policy: Policy, passage: Dict, count: int, seed: int) -> List[str]:
@@ -90,6 +95,13 @@ class PendingScores:
             scores[name] = mean(seed_accuracies) if seed_accuracies else 0.0
         return scores
 
+    def per_question(self, name: str) -> List[float]:
+        """Seed-mean correctness of each question, so a subset of the questions can be rescored."""
+        graded = [entry[name] for entry in self.per_seed if name in entry]
+        if not graded:
+            return []
+        return [mean(seed[index].result() for seed in graded) for index in range(len(graded[0]))]
+
 
 def closed_book_scores(policy: Policy, grader: Grader, question_sets: Dict[str, QuestionSet],
                        seed: int) -> PendingScores:
@@ -139,8 +151,9 @@ def se_rl_round(policy: Policy, grader: Grader, passages: Sequence[Dict],
         ]
         scores = [entry.means() for entry in pending]
         reward_accuracies = [entry["reward"] for entry in scores]
-        # first index on ties, like the stable sort in SEAL's build_SFT_dataset
-        chosen = max(range(len(scores)), key=lambda index: reward_accuracies[index])
+        # first index on ties, like the stable sort in SEAL's build_SFT_dataset; rounded so that
+        # equal correct counts averaged in a different seed order still tie
+        chosen = max(range(len(scores)), key=lambda index: round(reward_accuracies[index], 9))
         baseline = before.means()
         record = {
             "key": key,
@@ -151,6 +164,10 @@ def se_rl_round(policy: Policy, grader: Grader, passages: Sequence[Dict],
             "reward_positive": [accuracy > baseline["reward"] for accuracy in reward_accuracies],
             "chosen": chosen,
             "chosen_self_edit": self_edits[chosen],
+            # sha1 per candidate: conditions sharing weights and seed must share the pool
+            "self_edit_sha1": [self_edit_sha1(edit) for edit in self_edits],
+            # per-question reward correctness lets a smaller question set be rescored afterwards
+            "reward_per_question": [entry.per_question("reward") for entry in pending],
             "truncated": [policy.token_count(edit) >= config.SELF_EDIT_MAX_TOKENS
                           for edit in self_edits],
             "ttt_count": policy.ttt_count - ttt_before,
@@ -184,7 +201,8 @@ def random_selection_round(policy: Policy, passages: Sequence[Dict], round_index
         self_edits = sample_self_edits(policy, passage, config.SELF_EDITS, seed=sample_seed)
         chosen = picker.randrange(len(self_edits))
         records.append({"key": passage_key(passage), "title": passage["title"],
-                        "chosen": chosen})
+                        "chosen": chosen,
+                        "self_edit_sha1": [self_edit_sha1(edit) for edit in self_edits]})
         pairs.append((self_edit_prompt(passage), self_edits[chosen]))
     return {"round": round_index, "passages": records, "pairs": pairs,
             "ttt_count": 0, "gpu_seconds": 0.0}

@@ -34,6 +34,11 @@ def se_rl_passages(round_index: int) -> List[Passage]:
     return list(_shuffled(config.SQUAD_TRAIN)[start : start + config.SE_RL_PASSAGES])
 
 
+def se_rl_reserve() -> List[Passage]:
+    """Replacements for SE-RL passages that yield too few questions; run1's outer pool, unused here."""
+    return list(_shuffled(config.SQUAD_TRAIN)[OUTER_POOL_START : OUTER_POOL_START + config.SE_RL_RESERVE])
+
+
 def dev_passages() -> List[Passage]:
     return list(_shuffled(config.SQUAD_TRAIN)[DEV_START : DEV_START + config.DEV_PASSAGES])
 
